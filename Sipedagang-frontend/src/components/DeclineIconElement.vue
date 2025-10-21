@@ -1,0 +1,18 @@
+<template>
+  <svg
+    width="54"
+    height="54"
+    viewBox="0 0 54 54"
+    fill="none"
+    xmlns="http://www.w3.org/2000/svg"
+  >
+    <circle cx="27" cy="27" r="27" fill="#F44336" />
+    <path
+      d="M34 20L20 34M20 20L34 34"
+      stroke="white"
+      stroke-width="3"
+      stroke-linecap="round"
+      stroke-linejoin="round"
+    />
+  </svg>
+</template>
