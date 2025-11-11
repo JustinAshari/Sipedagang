@@ -1323,8 +1323,7 @@
           <span class="font-medium">Mulai dengan mencari perusahaan</span>
         </div>
         <p>
-          Ketik nama perusahaan di kolom pencarian untuk menampilkan dan mengisi
-            data pemohon secara otomatis.  
+          Ketik nama perusahaan di kolom pencarian untuk menampilkan dan mengisi data pemohon secara otomatis.  
         </p>
       </div>
     </div>

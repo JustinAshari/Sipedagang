@@ -285,6 +285,40 @@
     setTimeout(() => handleFormChanged(), 50)
   }
 
+  const confirmRemove = async (index) => {
+    // If there's only one form, ask to clear instead
+    if (forms.value.length === 1) {
+      const res = await Swal.fire({
+        title: 'Hapus / Kosongkan Form?',
+        text: 'Hanya ada satu lembar. Apakah Anda ingin mengosongkan form ini?',
+        icon: 'warning',
+        showCancelButton: true,
+        confirmButtonText: 'Kosongkan',
+        cancelButtonText: 'Batal',
+      })
+      if (res.isConfirmed) {
+        if (formRefs.value[0] && formRefs.value[0].clearForm) {
+          await formRefs.value[0].clearForm()
+        }
+        hasUnsavedChanges.value = false
+      }
+      return
+    }
+
+    const result = await Swal.fire({
+      title: 'Hapus Lembar?',
+      text: `Anda akan menghapus lembar ${index + 1}. Lanjutkan?`,
+      icon: 'warning',
+      showCancelButton: true,
+      confirmButtonText: 'Hapus',
+      cancelButtonText: 'Batal',
+    })
+
+    if (result.isConfirmed) {
+      removeForm(index)
+    }
+  }
+
   // Pre-submit validation and confirmation when multiple PO numbers detected
   const preSubmitChecks = async () => {
     const poList = []
@@ -347,27 +381,9 @@
                 <div class="flex items-center gap-2">
                   <button
                     type="button"
-                    class="text-sm text-gray-600 hover:text-gray-800 px-2"
-                    :title="'Pindah ke atas'"
-                    @click="moveFormUp(idx)"
-                    :disabled="idx === 0"
-                  >
-                    ▲
-                  </button>
-                  <button
-                    type="button"
-                    class="text-sm text-gray-600 hover:text-gray-800 px-2"
-                    :title="'Pindah ke bawah'"
-                    @click="moveFormDown(idx)"
-                    :disabled="idx === forms.length - 1"
-                  >
-                    ▼
-                  </button>
-                  <button
-                    type="button"
                     class="text-sm text-red-600 hover:text-red-800 px-2"
                     :title="'Hapus lembar ini'"
-                    @click="() => { if (confirm('Hapus lembar ini?')) removeForm(idx) }"
+                    @click="confirmRemove(idx)"
                   >
                     Hapus
                   </button>
