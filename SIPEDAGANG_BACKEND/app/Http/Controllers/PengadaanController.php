@@ -152,9 +152,28 @@ class PengadaanController extends Controller
         }
 
 
-        $pengadaan->save();
+    $pengadaan->save();
 
-        return response()->json(['message' => 'Data berhasil disimpan'], 201);
+    // Attach parsed_in_data for client convenience
+    $pengadaan->parsed_in_data = $pengadaan->in_data ? (json_decode($pengadaan->in_data, true) ?: []) : [];
+
+    // Attach SPP formatted: if spp empty or non-numeric show 0 + unit (derived from kuantum/jumlah_pembayaran)
+    $pengadaan->spp = $pengadaan->spp ?? '';
+    $unit = '';
+    if (!empty($pengadaan->kuantum) && preg_match('/\b(KG|LITER|PCS)\b/i', $pengadaan->kuantum, $m)) {
+        $unit = strtoupper($m[1]);
+    }
+    if (!$unit && !empty($pengadaan->jumlah_pembayaran) && preg_match('/\b(KG|LITER|PCS)\b/i', $pengadaan->jumlah_pembayaran, $m2)) {
+        $unit = strtoupper($m2[1]);
+    }
+    $sppTrim = trim((string)$pengadaan->spp);
+    if ($sppTrim !== '' && preg_match('/^[\d.]+/', $sppTrim)) {
+        $pengadaan->spp_formatted = strtoupper($sppTrim);
+    } else {
+        $pengadaan->spp_formatted = $unit ? ('0 ' . $unit) : '0';
+    }
+
+    return response()->json(['message' => 'Data berhasil disimpan', 'data' => $pengadaan], 201);
     }
 
     private function hitungJumlahPembayaran(array $inData): string
@@ -233,6 +252,37 @@ class PengadaanController extends Controller
 
         $pengadaan = $query->orderByDesc('tanggal_pengadaan')->paginate($perPage);
 
+        // Ensure parsed_in_data is present on each item in paginated data
+        $pengadaan->getCollection()->transform(function ($item) use ($request) {
+            $item->parsed_in_data = $item->in_data ? (json_decode($item->in_data, true) ?: []) : [];
+
+            // Ensure SPP is always present
+            $item->spp = $item->spp ?? '';
+
+            // Determine unit from kuantum or jumlah_pembayaran
+            $unit = '';
+            if (!empty($item->kuantum)) {
+                if (preg_match('/\b(KG|LITER|PCS)\b/i', $item->kuantum, $m)) {
+                    $unit = strtoupper($m[1]);
+                }
+            }
+            if (!$unit && !empty($item->jumlah_pembayaran)) {
+                if (preg_match('/\b(KG|LITER|PCS)\b/i', $item->jumlah_pembayaran, $m)) {
+                    $unit = strtoupper($m[1]);
+                }
+            }
+
+            // If spp has numeric value use it, otherwise show 0 + unit when available
+            $sppTrim = trim((string)$item->spp);
+            if ($sppTrim !== '' && preg_match('/^[\d.]+/', $sppTrim)) {
+                $item->spp_formatted = strtoupper($sppTrim);
+            } else {
+                $item->spp_formatted = $unit ? ('0 ' . $unit) : '0';
+            }
+
+            return $item;
+        });
+
         return response()->json($pengadaan);
     }
 
@@ -255,10 +305,17 @@ class PengadaanController extends Controller
 
     public function show($id)
     {
-        $pengadaan = Pengadaan::with('user')->findOrFail($id);
-        $this->authorizeAccess($pengadaan);
+    $pengadaan = Pengadaan::with('user')->findOrFail($id);
+    $this->authorizeAccess($pengadaan);
 
-        return response()->json($pengadaan);
+    // Attach parsed_in_data for consistency
+    $pengadaan->parsed_in_data = $pengadaan->in_data ? (json_decode($pengadaan->in_data, true) ?: []) : [];
+
+    // Attach SPP formatted
+    $pengadaan->spp = $pengadaan->spp ?? '';
+    $pengadaan->spp_formatted = $pengadaan->spp ? strtoupper($pengadaan->spp) : '-';
+
+    return response()->json($pengadaan);
     }
 
     public function update(Request $request, $id)
@@ -379,7 +436,7 @@ class PengadaanController extends Controller
         $jumlah = isset($matches[1]) ? (float)$matches[1] : 0;
 
         if ($pengaturan->tanpa_pajak) {
-            $pengadaan->update([
+                $pengadaan->update([
                 'harga_sebelum_pajak' => null,
                 'dpp' => null,
                 'ppn_total' => null,
@@ -402,7 +459,27 @@ class PengadaanController extends Controller
             ]);
         }
 
-        return response()->json(['message' => 'Data berhasil diperbarui']);
+        // Return updated resource with parsed_in_data
+        $pengadaan->refresh();
+        $pengadaan->parsed_in_data = $pengadaan->in_data ? (json_decode($pengadaan->in_data, true) ?: []) : [];
+
+    // Attach SPP formatted for consistency on update: if spp empty show 0 + unit
+    $pengadaan->spp = $pengadaan->spp ?? '';
+    $unit = '';
+    if (!empty($pengadaan->kuantum) && preg_match('/\b(KG|LITER|PCS)\b/i', $pengadaan->kuantum, $m)) {
+        $unit = strtoupper($m[1]);
+    }
+    if (!$unit && !empty($pengadaan->jumlah_pembayaran) && preg_match('/\b(KG|LITER|PCS)\b/i', $pengadaan->jumlah_pembayaran, $m2)) {
+        $unit = strtoupper($m2[1]);
+    }
+    $sppTrim = trim((string)$pengadaan->spp);
+    if ($sppTrim !== '' && preg_match('/^[\d.]+/', $sppTrim)) {
+        $pengadaan->spp_formatted = strtoupper($sppTrim);
+    } else {
+        $pengadaan->spp_formatted = $unit ? ('0 ' . $unit) : '0';
+    }
+
+        return response()->json(['message' => 'Data berhasil diperbarui', 'data' => $pengadaan]);
     }
 
 

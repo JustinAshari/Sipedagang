@@ -6,10 +6,12 @@ import {
   updatePengadaan,
   deletePengadaan,
 } from '@/services/pengadaanService'
+import { parseInDataString } from '@/utils/parseInData'
 
 export const usePengadaanStore = defineStore('pengadaan', {
   state: () => ({
     pengadaanList: [],
+      pengadaanDetails: {},
     currentPengadaan: null,
     loading: false,
     error: null,
@@ -98,7 +100,22 @@ export const usePengadaanStore = defineStore('pengadaan', {
           tanggalAkhir,
         )
 
-        this.pengadaanList = response.data.data || []
+        // Prefer parsed_in_data provided by backend; fallback to client-side parsing
+        this.pengadaanList = (response.data.data || []).map((item) => {
+          if (item.parsed_in_data && Array.isArray(item.parsed_in_data)) {
+            return item
+          }
+
+          // Fallback: attempt to parse in_data string if backend didn't set parsed_in_data
+          try {
+            const parsed = parseInDataString(item.in_data)
+            return { ...item, parsed_in_data: parsed }
+          } catch (e) {
+            // eslint-disable-next-line no-console
+            console.error('Failed to parse in_data for item', item.id, e)
+            return { ...item, parsed_in_data: [] }
+          }
+        })
 
         // ✅ Update pagination dengan data dari response
         this.pagination = {
@@ -141,9 +158,66 @@ export const usePengadaanStore = defineStore('pengadaan', {
       try {
         const response = await getPengadaanById(id)
 
-        this.currentPengadaan = response.data.data || response.data
+        // Attach parsed_in_data for single item as well
+        const raw = response.data.data || response.data
+        if (raw) {
+          try {
+            const parsed = raw.in_data ? JSON.parse(raw.in_data) : []
+            raw.parsed_in_data = Array.isArray(parsed) ? parsed : []
+          } catch (e) {
+            // eslint-disable-next-line no-console
+            console.error('Failed to parse in_data for currentPengadaan', raw.id, e)
+            raw.parsed_in_data = []
+          }
+        }
+
+        this.currentPengadaan = raw
+
+        // cache detail by id for quick access when UI expands
+        if (raw && raw.id) {
+          this.pengadaanDetails = {
+            ...this.pengadaanDetails,
+            [raw.id]: raw,
+          }
+        }
 
         return this.currentPengadaan
+      } catch (err) {
+        this.handleError(err, 'Gagal mengambil detail pengadaan')
+        throw err
+      } finally {
+        this.loading = false
+      }
+    },
+
+    // New: fetch details (with caching) and return full item
+    async fetchPengadaanDetails(id, force = false) {
+      if (!force && this.pengadaanDetails[id]) {
+        return this.pengadaanDetails[id]
+      }
+
+      this.loading = true
+      this.error = null
+      try {
+        const response = await getPengadaanById(id)
+        const raw = response.data.data || response.data
+        if (raw) {
+          try {
+            const parsed = raw.in_data ? JSON.parse(raw.in_data) : []
+            raw.parsed_in_data = Array.isArray(parsed) ? parsed : []
+          } catch (e) {
+            // eslint-disable-next-line no-console
+            console.error('Failed to parse in_data for detail fetch', id, e)
+            raw.parsed_in_data = []
+          }
+        }
+
+        this.pengadaanDetails = {
+          ...this.pengadaanDetails,
+          [id]: raw,
+        }
+
+        return raw
       } catch (err) {
         this.handleError(err, 'Gagal mengambil detail pengadaan')
         throw err

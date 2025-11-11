@@ -34,4 +34,17 @@ class Pengadaan extends Model
     {
         return $this->belongsTo(User::class);
     }
+
+    // Accessor to return parsed in_data as array
+    protected $appends = ['parsed_in_data'];
+
+    public function getParsedInDataAttribute()
+    {
+        if (empty($this->in_data)) {
+            return [];
+        }
+
+        $decoded = json_decode($this->in_data, true);
+        return is_array($decoded) ? $decoded : [];
+    }
 }

@@ -7,6 +7,7 @@
   import Swal from 'sweetalert2'
 
   const pengadaanStore = usePengadaanStore()
+  import parseInData from '@/utils/parseInData'
 
   const data = computed(() => pengadaanStore.pengadaanList)
   const currentPage = computed(() => pengadaanStore.pagination.currentPage)
@@ -186,6 +187,135 @@
 
     return unitPart ? `${formattedNumber} ${unitPart}` : formattedNumber
   }
+
+  // State & helpers for IN Data dropdown (mobile view)
+  const openInData = ref(null)
+
+  // Parent-managed expanded ids for desktop multi-expand support
+  const expandedIds = ref([])
+
+  function toggleInData(id) {
+    // Mobile behavior: keep single-open style for mobile cards
+    const willOpen = openInData.value !== id
+    openInData.value = willOpen ? id : null
+    if (willOpen) {
+      // fetch details (cached) so template can show server-provided parsed_in_data and tax fields
+      // DEBUG: log current cached detail and parsed result
+      const cached = pengadaanStore.pengadaanDetails[id]
+      const listItem = data.value.find((d) => d.id === id)
+      try {
+        // log before fetch
+        // eslint-disable-next-line no-console
+        console.log('[DEBUG] toggleInData opening id=', id, { cached, listItem, parsedFromList: listItem ? getParsedInData(listItem) : undefined })
+      } catch (err) {
+        // eslint-disable-next-line no-console
+        console.error('[DEBUG] error during debug log', err)
+      }
+
+      pengadaanStore.fetchPengadaanDetails(id).catch((e) => console.error('Failed to fetch details', e))
+    }
+  }
+
+  function toggleExpanded(id) {
+    const idx = expandedIds.value.indexOf(id)
+    if (idx === -1) {
+      // open: fetch details from backend (cached by store)
+      try {
+        // don't await to keep UI snappy, but we do want cached result; show loading handled in child
+        pengadaanStore.fetchPengadaanDetails(id).catch((e) => console.error(e))
+      } catch (e) {
+        console.error('Error prefetching details', e)
+      }
+      expandedIds.value.push(id)
+    } else {
+      expandedIds.value.splice(idx, 1)
+    }
+  }
+
+
+  function getParsedInData(item) {
+    if (!item) return []
+    const cached = pengadaanStore.pengadaanDetails[item.id]
+    if (cached && Array.isArray(cached.parsed_in_data)) return cached.parsed_in_data
+    if (item.parsed_in_data && Array.isArray(item.parsed_in_data)) return item.parsed_in_data
+    try {
+      // try robust parsing with helper
+      const raw = item.in_data || item.parsed_in_data
+      const parsed = robustParseInData(raw)
+      return parsed
+    } catch (e) {
+      try {
+        const parsed = item.in_data ? JSON.parse(item.in_data) : []
+        return Array.isArray(parsed) ? parsed : []
+      } catch (err) {
+        // eslint-disable-next-line no-console
+        console.error('Failed to parse in_data for item', item.id, e)
+        return []
+      }
+    }
+  }
+
+  // More tolerant parser to handle string/object/double-encoded and object-with-numeric-keys
+  function robustParseInData(raw) {
+    if (!raw) return []
+
+    // if already array
+    if (Array.isArray(raw)) return raw
+
+    // if it's a string, try JSON.parse (and double-parse if needed)
+    if (typeof raw === 'string') {
+      try {
+        const p = JSON.parse(raw)
+        if (Array.isArray(p)) return p
+        // sometimes backend returns an object representing array-like structure
+        if (p && typeof p === 'object') {
+          // if object has numeric keys, convert to array
+          const keys = Object.keys(p)
+          const numeric = keys.every((k) => String(parseInt(k)) === String(k))
+          if (numeric) return Object.values(p)
+          // if object has a data/items property use it
+          if (Array.isArray(p.data)) return p.data
+          if (Array.isArray(p.items)) return p.items
+          // otherwise wrap object
+          return [p]
+        }
+      } catch (e) {
+        // try double-parse (stringified JSON inside string)
+        try {
+          const p2 = JSON.parse(JSON.parse(raw))
+          return Array.isArray(p2) ? p2 : []
+        } catch (e2) {
+          return []
+        }
+      }
+    }
+
+    // if it's an object (not array), try to normalize
+    if (typeof raw === 'object') {
+      // numeric-keyed object -> array
+      const keys = Object.keys(raw)
+      const numeric = keys.length > 0 && keys.every((k) => String(parseInt(k)) === String(k))
+      if (numeric) return Object.values(raw)
+      if (Array.isArray(raw.data)) return raw.data
+      if (Array.isArray(raw.items)) return raw.items
+      return [raw]
+    }
+
+    return []
+  }
+
+  function formatDate(dateStr) {
+    if (!dateStr) return '-'
+    try {
+      return new Date(dateStr).toLocaleDateString('id-ID', {
+        day: '2-digit',
+        month: 'short',
+        year: 'numeric',
+      })
+    } catch (e) {
+      return dateStr
+    }
+  }
 </script>
 
 <template>
@@ -211,6 +341,7 @@
 
             <!-- Search dan Filter untuk desktop -->
             <div class="flex justify-end items-center gap-2 sm:gap-3 lg:gap-4">
+              <!-- (Removed global Expand All / Collapse All controls per request) -->
               <!-- Search result info compact di sebelah kiri search (desktop) -->
               <div v-if="searchText">
                 <span
@@ -851,13 +982,21 @@
                         >
                           {{ item.jenis_pengadaan_barang || '-' }}
                         </h4>
-                        <p class="text-xs sm:text-sm text-gray-600 font-mono">
-                          No: {{ item.no_preorder || '-' }}
-                        </p>
+                        <div class="flex items-center gap-2 text-xs sm:text-sm text-gray-600 font-mono">
+                          <p class="truncate">No: {{ item.no_preorder || '-' }}</p>
+                          <button
+                            @click.stop="toggleInData(item.id)"
+                            class="text-xs sm:text-sm text-gray-600 bg-gray-100 px-2 py-0.5 rounded-md hover:bg-gray-200 transition-colors"
+                            :aria-expanded="openInData === item.id"
+                            title="Detail IN Data"
+                          >
+                            Detail IN
+                          </button>
+                        </div>
                       </div>
                       <div class="flex space-x-1 sm:space-x-2 ml-2">
                         <button
-                          @click="openPrintPreview(item.id)"
+                          @click.stop="openPrintPreview(item.id)"
                           class="cursor-pointer text-[#2B79EF] hover:text-white transition-all duration-200 p-1.5 rounded-full hover:bg-[#2B79EF] group"
                           title="Cetak Dokumen"
                         >
@@ -880,6 +1019,7 @@
                         </button>
                         <RouterLink :to="`/superadmin/riwayat-edit/${item.id}`">
                           <button
+                            @click.stop
                             class="cursor-pointer text-[#9BA1AA] hover:text-white transition-all duration-200 p-1.5 rounded-full hover:bg-[#6B7280] group"
                             title="Edit Data"
                           >
@@ -907,7 +1047,7 @@
                           </button>
                         </RouterLink>
                         <button
-                          @click="handleDelete(item)"
+                          @click.stop="handleDelete(item)"
                           class="cursor-pointer text-[#F44336] hover:text-white transition-all duration-200 p-1.5 rounded-full hover:bg-[#F44336] group"
                           title="Hapus Data"
                         >
@@ -962,58 +1102,61 @@
                         </p>
                       </div>
 
-                      <!-- IN Data Dropdown -->
-                      <div class="col-span-full mt-2">
-                        <div class="space-y-2">
-                          <button
-                            @click="toggleInData(item.id)"
-                            class="flex items-center justify-between w-full px-3 py-2 text-left text-sm bg-gray-50 hover:bg-gray-100 rounded-lg transition-colors duration-200"
-                          >
-                            <span class="font-medium text-gray-700">Detail IN Data</span>
-                            <svg
-                              class="w-4 h-4 text-gray-500 transition-transform duration-200"
-                              :class="{ 'rotate-180': openInData === item.id }"
-                              fill="none"
-                              stroke="currentColor"
-                              viewBox="0 0 24 24"
-                            >
-                              <path
-                                stroke-linecap="round"
-                                stroke-linejoin="round"
-                                stroke-width="2"
-                                d="M19 9l-7 7-7-7"
-                              />
-                            </svg>
-                          </button>
-                          
-                          <!-- IN Data Content -->
-                          <div v-if="openInData === item.id" class="bg-white rounded-lg border border-gray-200 p-3">
-                            <div v-if="item.in_data && JSON.parse(item.in_data).length > 0">
+                      <!-- IN Data Content (mobile) - rendered when toggled via the button at No Preorder -->
+                      <div v-if="openInData === item.id" class="col-span-full mt-2">
+                        <div class="bg-white rounded-lg border border-gray-200 p-3">
+                          <div v-if="(pengadaanStore.pengadaanDetails[item.id]?.parsed_in_data || getParsedInData(item)).length > 0">
                               <div class="space-y-2">
-                                <div v-for="(inItem, inIndex) in JSON.parse(item.in_data)" :key="inIndex" class="py-2 border-b border-gray-100 last:border-0">
-                                  <div class="grid grid-cols-2 gap-2">
-                                    <div>
-                                      <span class="text-gray-500">Tanggal:</span>
-                                      <span class="font-medium ml-1">{{ formatDate(inItem.tanggal) }}</span>
-                                    </div>
-                                    <div>
-                                      <span class="text-gray-500">DO Number:</span>
-                                      <span class="font-medium ml-1">{{ inItem.no_do || '-' }}</span>
-                                    </div>
-                                    <div>
-                                      <span class="text-gray-500">Kuantum:</span>
-                                      <span class="font-medium ml-1">{{ inItem.kuantum || '-' }}</span>
-                                    </div>
-                                    <div>
-                                      <span class="text-gray-500">Keterangan:</span>
-                                      <span class="font-medium ml-1">{{ inItem.keterangan || '-' }}</span>
-                                    </div>
+                                <div v-for="(inItem, inIndex) in (pengadaanStore.pengadaanDetails[item.id]?.parsed_in_data || getParsedInData(item))" :key="inIndex" class="py-2 border-b border-gray-100 last:border-0">
+                                <div class="grid grid-cols-2 gap-2">
+                                  <div>
+                                    <span class="text-gray-500">Tanggal:</span>
+                                    <span class="font-medium ml-1">{{ formatDate(inItem.tanggal || inItem.tanggal_in) }}</span>
+                                  </div>
+                                  <div>
+                                    <span class="text-gray-500">DO Number:</span>
+                                    <span class="font-medium ml-1">{{ inItem.no_do || inItem.no_in || '-' }}</span>
+                                  </div>
+                                  <div>
+                                    <span class="text-gray-500">Kuantum:</span>
+                                    <span class="font-medium ml-1">{{ inItem.kuantum || inItem.kuantum_in || '-' }}</span>
+                                  </div>
+                                  <div>
+                                    <span class="text-gray-500">Keterangan:</span>
+                                    <span class="font-medium ml-1">{{ inItem.keterangan || '-' }}</span>
                                   </div>
                                 </div>
                               </div>
                             </div>
-                            <div v-else class="text-center text-gray-500 py-2">
-                              Tidak ada data IN
+                          </div>
+                          <div v-else class="text-center text-gray-500 py-2">
+                            Tidak ada data IN
+                          </div>
+
+                          <!-- Tax / nominal info (from cached detail if available) -->
+                          <div v-if="pengadaanStore.pengadaanDetails[item.id] || item.harga_sebelum_pajak || item.dpp || item.ppn_total || item.pph_total || item.nominal" class="mt-3 border-t pt-3">
+                            <h5 class="text-sm font-medium mb-2">Informasi Harga & Pajak</h5>
+                            <div class="grid grid-cols-2 gap-2 text-sm">
+                              <div>
+                                <span class="text-gray-500">Harga Sebelum Pajak:</span>
+                                <div class="font-medium">{{ pengadaanStore.pengadaanDetails[item.id]?.harga_sebelum_pajak ?? item.harga_sebelum_pajak ?? '-' }}</div>
+                              </div>
+                              <div>
+                                <span class="text-gray-500">DPP:</span>
+                                <div class="font-medium">{{ pengadaanStore.pengadaanDetails[item.id]?.dpp ?? item.dpp ?? '-' }}</div>
+                              </div>
+                              <div>
+                                <span class="text-gray-500">PPN:</span>
+                                <div class="font-medium">{{ pengadaanStore.pengadaanDetails[item.id]?.ppn_total ?? item.ppn_total ?? '-' }}</div>
+                              </div>
+                              <div>
+                                <span class="text-gray-500">PPH:</span>
+                                <div class="font-medium">{{ pengadaanStore.pengadaanDetails[item.id]?.pph_total ?? item.pph_total ?? '-' }}</div>
+                              </div>
+                              <div class="col-span-2">
+                                <span class="text-gray-500">Nominal:</span>
+                                <div class="font-medium">{{ pengadaanStore.pengadaanDetails[item.id]?.nominal ?? item.nominal ?? '-' }}</div>
+                              </div>
                             </div>
                           </div>
                         </div>
@@ -1117,6 +1260,9 @@
                         Kuantum
                       </th>
                       <th class="px-1 lg:px-2 py-4 font-semibold w-[10%]">
+                        SPP
+                      </th>
+                      <th class="px-1 lg:px-2 py-4 font-semibold w-[10%]">
                         Tanggal
                       </th>
                       <th
@@ -1130,7 +1276,7 @@
                     <template v-if="data.length === 0">
                       <tr>
                         <td
-                          colspan="8"
+                          colspan="9"
                           class="py-16 text-center text-gray-400 bg-gray-50"
                         >
                           <div class="text-gray-300 mb-3">
@@ -1158,6 +1304,8 @@
                         v-for="(item, index) in data"
                         :key="item.id || index"
                         :item="item"
+                        :expanded-ids="expandedIds"
+                        @toggle-in-data="toggleExpanded"
                         :class="[
                           index % 2 === 0
                             ? 'bg-white hover:bg-gray-50'
