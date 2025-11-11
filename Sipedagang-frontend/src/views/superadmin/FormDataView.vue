@@ -3,14 +3,16 @@
   import { useRouter, onBeforeRouteLeave } from 'vue-router'
   import MainElement from '@/components/MainElement.vue'
   import FormElement from '@/components/FormElement.vue'
-  import ButtonElement from '@/components/ButtonElement.vue'
   import Swal from 'sweetalert2'
 
   const formRef = ref(null)
+  const formRefs = ref([])
+  const forms = ref([{}]) // array to render multiple FormElement instances
   const isSubmitting = ref(false)
   const hasUnsavedChanges = ref(false)
+  const maxForms = 7 // batas maksimal pengadaan per PO
 
-  const pengadaanStore = computed(() => formRef.value?.pengadaanStore)
+  const pengadaanStore = computed(() => formRefs.value && formRefs.value[0] ? formRefs.value[0].pengadaanStore : null)
 
   const confirmLeave = async () => {
     if (!hasUnsavedChanges.value) return true
@@ -47,8 +49,10 @@
   }
 
   // ✅ Handle event dari FormElement
-  const handleFormChanged = (hasChanges) => {
-    hasUnsavedChanges.value = hasChanges
+  const handleFormChanged = () => {
+    // any child form has changes -> set hasUnsavedChanges
+    const any = formRefs.value.some((f) => f && f.hasChanges && f.hasChanges.value)
+    hasUnsavedChanges.value = any
   }
 
   onMounted(() => {
@@ -60,25 +64,36 @@
   })
 
   async function handleSubmit() {
-    if (!formRef.value) return
+    if (!formRefs.value || formRefs.value.length === 0) return
+
+    // run pre-submit checks (validation + multi-PO confirmation)
+    const pre = await preSubmitChecks()
+    if (!pre.ok) return
 
     isSubmitting.value = true
 
     try {
-      await formRef.value.submitForm()
+      // Submit each form sequentially. Stop on first failure.
+      for (let i = 0; i < formRefs.value.length; i++) {
+        const f = formRefs.value[i]
+        if (!f || !f.submitForm) continue
+        await f.submitForm()
+      }
 
       hasUnsavedChanges.value = false
 
-      // ✅ Auto-clear form setelah berhasil submit
-      if (formRef.value && formRef.value.clearForm) {
-        await formRef.value.clearForm()
-        hasUnsavedChanges.value = false
-      }
+      // Auto-clear all forms after successful submit
+      await Promise.all(
+        formRefs.value.map((f) => (f && f.clearForm ? f.clearForm() : Promise.resolve()))
+      )
 
-      // ✅ Sesuaikan dengan SettingPengadaanView - tanpa .then()
+      // Reset to single blank form
+      forms.value = [{}]
+      formRefs.value = []
+
       Swal.fire({
         title: 'Berhasil!',
-        text: 'Data pengadaan berhasil disimpan',
+        text: 'Semua data pengadaan berhasil disimpan',
         icon: 'success',
         timer: 2000,
         showConfirmButton: false,
@@ -174,21 +189,14 @@
 
   // ✅ Clear dengan konfirmasi - sesuaikan dengan SettingPengadaanView
   async function handleClear() {
-    if (!hasUnsavedChanges.value) {
-      if (formRef.value && formRef.value.clearForm) {
-        formRef.value.clearForm()
-      }
-      return
-    }
-
     const result = await Swal.fire({
       title: 'Konfirmasi Clear Form',
-      text: 'Yakin ingin menghapus semua data yang sudah diisi?',
+      text: 'Yakin ingin menghapus semua data yang sudah diisi? Ini akan mengosongkan semua lembar input pengadaan.',
       icon: 'warning',
       showCancelButton: true,
       confirmButtonColor: '#d33',
       cancelButtonColor: '#6c757d',
-      confirmButtonText: 'Ya, Hapus',
+      confirmButtonText: 'Ya, Hapus Semua',
       cancelButtonText: 'Batal',
       reverseButtons: true,
       customClass: {
@@ -199,24 +207,118 @@
     })
 
     if (result.isConfirmed) {
-      if (formRef.value && formRef.value.clearForm) {
-        formRef.value.clearForm()
-        hasUnsavedChanges.value = false
+      // Clear all child forms if possible
+      await Promise.all(
+        formRefs.value.map((f) => (f && f.clearForm ? f.clearForm() : Promise.resolve()))
+      )
+      // reset to single blank form
+      forms.value = [{}]
+      formRefs.value = []
+      hasUnsavedChanges.value = false
 
-        // ✅ Show success message for clear
-        Swal.fire({
-          title: 'Berhasil!',
-          text: 'Form berhasil dibersihkan',
-          icon: 'success',
-          timer: 1500,
-          showConfirmButton: false,
-          timerProgressBar: true,
-          customClass: {
-            popup: 'rounded-xl',
-          },
-        })
-      }
+      Swal.fire({
+        title: 'Berhasil!',
+        text: 'Semua lembar form berhasil dibersihkan',
+        icon: 'success',
+        timer: 1500,
+        showConfirmButton: false,
+        timerProgressBar: true,
+        customClass: {
+          popup: 'rounded-xl',
+        },
+      })
     }
+  }
+
+  const handleAddPengadaan = () => {
+    if (forms.value.length >= maxForms) {
+      Swal.fire({
+        title: 'Batas Terlampaui',
+        text: `Maksimal ${maxForms} pengadaan per PO`,
+        icon: 'warning',
+        timer: 1800,
+        showConfirmButton: false,
+      })
+      return
+    }
+
+    forms.value.push({})
+    // wait next tick so ref mapping can update
+    setTimeout(() => {
+      handleFormChanged()
+    }, 50)
+  }
+
+  const removeForm = (index) => {
+    if (forms.value.length === 1) {
+      // clear single form instead
+      if (formRefs.value[0] && formRefs.value[0].clearForm) {
+        formRefs.value[0].clearForm()
+      }
+      return
+    }
+    forms.value.splice(index, 1)
+    formRefs.value.splice(index, 1)
+    // re-evaluate changes
+    setTimeout(() => handleFormChanged(), 50)
+  }
+
+  const moveFormUp = (index) => {
+    if (index <= 0) return
+    const a = forms.value[index - 1]
+    forms.value[index - 1] = forms.value[index]
+    forms.value[index] = a
+    const r = formRefs.value[index - 1]
+    formRefs.value[index - 1] = formRefs.value[index]
+    formRefs.value[index] = r
+    setTimeout(() => handleFormChanged(), 50)
+  }
+
+  const moveFormDown = (index) => {
+    if (index >= forms.value.length - 1) return
+    const a = forms.value[index + 1]
+    forms.value[index + 1] = forms.value[index]
+    forms.value[index] = a
+    const r = formRefs.value[index + 1]
+    formRefs.value[index + 1] = formRefs.value[index]
+    formRefs.value[index] = r
+    setTimeout(() => handleFormChanged(), 50)
+  }
+
+  // Pre-submit validation and confirmation when multiple PO numbers detected
+  const preSubmitChecks = async () => {
+    const poList = []
+    for (let i = 0; i < formRefs.value.length; i++) {
+      const f = formRefs.value[i]
+      if (!f) continue
+      const validation = f.validateForm()
+      if (!validation.isValid) {
+        await Swal.fire({
+          title: 'Validasi Gagal',
+          text: `Lembar ${i + 1}: ${validation.errors.join(', ')}`,
+          icon: 'error',
+        })
+        return { ok: false }
+      }
+      const data = f.getFormData()
+      poList.push((data.no_preorder || '').trim())
+    }
+
+    const uniquePOs = Array.from(new Set(poList.filter((p) => p && p.length > 0)))
+    if (uniquePOs.length > 1) {
+      const res = await Swal.fire({
+        title: 'Beberapa Nomor PO Terdeteksi',
+        html: `Terdeteksi <strong>${uniquePOs.length}</strong> nomor PO berbeda. Sistem akan menyimpan masing-masing lembar ke PO yang sesuai.<br/><br/>Lanjutkan menyimpan?`,
+        icon: 'question',
+        showCancelButton: true,
+        confirmButtonText: 'Lanjutkan',
+        cancelButtonText: 'Batal',
+        reverseButtons: true,
+      })
+      if (!res.isConfirmed) return { ok: false }
+    }
+
+    return { ok: true }
   }
 </script>
 
@@ -236,17 +338,108 @@
           ></span>
         </div>
 
-        <!-- FORM -->
-        <FormElement ref="formRef" @form-changed="handleFormChanged" />
+  <!-- FORM: render one or more FormElement instances -->
+  <div class="flex flex-col gap-4">
+          <template v-for="(f, idx) in forms" :key="`form-${idx}`">
+            <div class="border rounded-lg p-3 bg-white">
+              <div class="flex items-center justify-between mb-2">
+                <div class="font-medium">Lembar {{ idx + 1 }}</div>
+                <div class="flex items-center gap-2">
+                  <button
+                    type="button"
+                    class="text-sm text-gray-600 hover:text-gray-800 px-2"
+                    :title="'Pindah ke atas'"
+                    @click="moveFormUp(idx)"
+                    :disabled="idx === 0"
+                  >
+                    ▲
+                  </button>
+                  <button
+                    type="button"
+                    class="text-sm text-gray-600 hover:text-gray-800 px-2"
+                    :title="'Pindah ke bawah'"
+                    @click="moveFormDown(idx)"
+                    :disabled="idx === forms.length - 1"
+                  >
+                    ▼
+                  </button>
+                  <button
+                    type="button"
+                    class="text-sm text-red-600 hover:text-red-800 px-2"
+                    :title="'Hapus lembar ini'"
+                    @click="() => { if (confirm('Hapus lembar ini?')) removeForm(idx) }"
+                  >
+                    Hapus
+                  </button>
+                </div>
+              </div>
 
-        <!-- BUTTON -->
-        <ButtonElement
-          @onClickLeft="handleClear"
-          @onClickRight="handleSubmit"
-          :rightLoading="isSubmitting || pengadaanStore?.isLoading"
-          rightLabel="Simpan"
-          leftLabel="Clear"
-        />
+              <FormElement
+                :isEditMode="false"
+                :ref="(el) => (formRefs[idx] = el)"
+                @form-changed="handleFormChanged"
+              />
+            </div>
+          </template>
+          <div class="text-sm text-gray-500">{{ forms.length }} lembar pengadaan</div>
+        </div>
+
+  <!-- small spacer to guarantee gap when scrolling -->
+  <div class="w-full h-6"></div>
+
+  <!-- BUTTONS: Clear on left, Tambah Pengadaan + Simpan on right -->
+  <div class="flex items-center justify-between mt-8 sm:mt-10 w-full px-3 sm:px-4 gap-4 pb-5">
+          <!-- Left: Clear -->
+          <button
+            type="button"
+            class="bg-[#F44336] text-white rounded-lg h-10 sm:h-11 px-4 sm:px-6 md:px-8 font-medium text-sm sm:text-base cursor-pointer hover:scale-95 disabled:bg-red-300 disabled:cursor-not-allowed disabled:hover:scale-100 focus:ring-2 focus:ring-[#F44336] focus:ring-offset-2 transition-all duration-200 ease-in-out"
+            @click="handleClear"
+          >
+            Clear
+          </button>
+
+          <!-- Right group -->
+            <div class="flex items-center gap-3">
+            <button
+              type="button"
+              :disabled="forms.length >= maxForms"
+              :class="[forms.length >= maxForms ? 'bg-gray-200 text-gray-400 border-gray-200 cursor-not-allowed' : 'bg-white border border-[#0099FF] text-[#0099FF]'] + ' rounded-lg h-10 sm:h-11 px-4 sm:px-6 md:px-8 font-medium text-sm sm:text-base hover:scale-95 focus:ring-2 focus:ring-[#0099FF] focus:ring-offset-2 transition-all duration-200 ease-in-out'"
+              @click="handleAddPengadaan"
+            >
+              Tambah Pengadaan
+            </button>
+
+            <button
+              type="button"
+              :disabled="isSubmitting || pengadaanStore?.isLoading"
+              class="bg-[#0099FF] text-white rounded-lg h-10 sm:h-11 px-6 sm:px-8 md:px-12 lg:px-20 font-medium sm:font-semibold text-sm sm:text-base cursor-pointer hover:scale-95 disabled:bg-blue-300 disabled:cursor-not-allowed disabled:hover:scale-100 focus:ring-2 focus:ring-offset-2 focus:ring-[#0099FF] transition-all duration-200 ease-in-out flex items-center justify-center gap-2"
+              @click="handleSubmit"
+            >
+              <svg
+                v-if="isSubmitting || pengadaanStore?.isLoading"
+                class="animate-spin h-3 w-3 sm:h-4 sm:w-4 text-white"
+                xmlns="http://www.w3.org/2000/svg"
+                fill="none"
+                viewBox="0 0 24 24"
+              >
+                <circle
+                  class="opacity-25"
+                  cx="12"
+                  cy="12"
+                  r="10"
+                  stroke="currentColor"
+                  stroke-width="4"
+                ></circle>
+                <path
+                  class="opacity-75"
+                  fill="currentColor"
+                  d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"
+                ></path>
+              </svg>
+              <span>Simpan</span>
+            </button>
+          </div>
+        </div>
       </section>
     </MainElement>
 </template>

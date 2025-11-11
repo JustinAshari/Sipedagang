@@ -46,7 +46,7 @@
     <button
       type="button"
       :disabled="leftDisabled || rightLoading"
-      class="bg-[#9BA1AA] text-white rounded-lg h-10 sm:h-11 px-4 sm:px-6 md:px-8 lg:px-11 font-medium sm:font-semibold text-sm sm:text-base cursor-pointer hover:scale-95 disabled:bg-gray-300 disabled:cursor-not-allowed disabled:hover:scale-100 focus:ring-2 focus:ring-[#9BA1AA] focus:ring-offset-2 transition-all duration-200 ease-in-out order-2 sm:order-2"
+      class="bg-[#F44336] text-white rounded-lg h-10 sm:h-11 px-4 sm:px-6 md:px-8 lg:px-11 font-medium sm:font-semibold text-sm sm:text-base cursor-pointer hover:scale-95 disabled:bg-red-300 disabled:cursor-not-allowed disabled:hover:scale-100 focus:ring-2 focus:ring-[#F44336] focus:ring-offset-2 transition-all duration-200 ease-in-out order-2 sm:order-2"
       @click="$emit('onClickLeft')"
     >
       {{ leftLabel }}
