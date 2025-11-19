@@ -26,6 +26,10 @@
     window.open(`/surat-preview/${props.item.id}`, '_blank')
   }
 
+  const openPrintLatest = () => {
+    window.open(`/surat-preview/${props.item.id}?latest=1`, '_blank')
+  }
+
   const handleDelete = async () => {
     const result = await Swal.fire({
       title: 'Apakah Anda yakin?',
@@ -258,6 +262,18 @@
               stroke-linejoin="round"
               d="M6.75 3.75A2.25 2.25 0 0 0 4.5 6v3.75m15 0V6a2.25 2.25 0 0 0-2.25-2.25h-9m11.25 6V18a2.25 2.25 0 0 1-2.25 2.25H6.75A2.25 2.25 0 0 1 4.5 18V9.75m15 0H4.5m3 6h9m-6 3h3"
             />
+          </svg>
+        </button>
+
+        <!-- Print Latest Button -->
+        <button
+          @click.stop="openPrintLatest"
+          class="cursor-pointer text-[#155724] hover:text-white transition-all duration-200 p-1.5 rounded-full hover:bg-[#155724] group"
+          title="Cetak Dokumen Terbaru"
+        >
+          <svg xmlns="http://www.w3.org/2000/svg" fill="white" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" width="18" height="18" class="group-hover:fill-white transition-all">
+            <path stroke-linecap="round" stroke-linejoin="round" d="M12 6v6l4 2" />
+            <path stroke-linecap="round" stroke-linejoin="round" d="M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
           </svg>
         </button>
 

@@ -16,6 +16,7 @@
 
   onMounted(async () => {
     const id = route.params.id
+    const latestOnly = route.query && (route.query.latest === '1' || route.query.latest === 'true')
     if (id) {
       try {
         // ✅ Load setting pengadaan terlebih dahulu
@@ -23,6 +24,64 @@
 
         // Kemudian load data pengadaan
         pengadaan.value = await pengadaanStore.fetchPengadaanById(id)
+
+        // Jika diminta hanya cetak data IN terbaru, potong in_data ke elemen terakhir saja
+        if (pengadaan.value && latestOnly) {
+          try {
+            let inData = pengadaan.value.in_data || pengadaan.value.parsed_in_data || []
+            if (typeof inData === 'string') {
+              inData = JSON.parse(inData)
+            }
+            if (Array.isArray(inData) && inData.length > 0) {
+              const last = inData[inData.length - 1]
+              // Set only the last IN entry
+              pengadaan.value = Object.assign({}, pengadaan.value, { in_data: [last], parsed_in_data: [last] })
+
+              // Set jumlah_pembayaran to follow the latest IN kuantum_in
+              const latestKuantum = last.kuantum_in || last.kuantum || ''
+              pengadaan.value.jumlah_pembayaran = latestKuantum
+
+              // Keep the PO kuantum unchanged; do not overwrite pengadaan.value.kuantum
+
+              // Recalculate nominal/pricing using pengaturan if available in store
+              try {
+                const jenis = (pengadaan.value.jenis_pengadaan_barang || '').toLowerCase()
+                const pengaturan = settingPengadaanStore.pengaturanPengadaan.find(p => p.jenis_pengadaan_barang?.toLowerCase() === jenis)
+                if (pengaturan) {
+                  // extract numeric amount from latestKuantum
+                  const match = (latestKuantum || '').toString().match(/([\d.]+)/)
+                  const jumlah = match ? parseFloat(match[1]) : 0
+
+                  if (pengaturan.tanpa_pajak) {
+                    pengadaan.value.harga_sebelum_pajak = null
+                    pengadaan.value.dpp = null
+                    pengadaan.value.ppn_total = null
+                    pengadaan.value.pph_total = null
+                    pengadaan.value.nominal = Math.round(jumlah * parseFloat(pengaturan.harga_per_satuan) * 100) / 100
+                  } else {
+                    const hargaSebelumPajak = jumlah * parseFloat(pengaturan.harga_per_satuan)
+                    const dpp = hargaSebelumPajak * (100 / 111)
+                    const ppn = dpp * (pengaturan.ppn / 100)
+                    const pph = dpp * (pengaturan.pph / 100)
+                    const nominal = dpp - pph
+
+                    pengadaan.value.harga_sebelum_pajak = Math.round(hargaSebelumPajak * 100) / 100
+                    pengadaan.value.dpp = Math.round(dpp * 100) / 100
+                    pengadaan.value.ppn_total = Math.round(ppn * 100) / 100
+                    pengadaan.value.pph_total = Math.round(pph * 100) / 100
+                    pengadaan.value.nominal = Math.round(nominal * 100) / 100
+                  }
+                }
+              } catch (err) {
+                console.error('Error recalculating nominal for latest IN:', err)
+              }
+            } else {
+              pengadaan.value = Object.assign({}, pengadaan.value, { in_data: [], parsed_in_data: [] })
+            }
+          } catch (e) {
+            console.error('Failed to trim in_data to latest:', e)
+          }
+        }
 
         if (pengadaan.value) {
           await nextTick()

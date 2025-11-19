@@ -234,6 +234,11 @@
     window.open(`/surat-preview/${getItemValue(item, 'id')}`, '_blank')
   }
 
+  const printLatestItem = (item) => {
+    emit('printLatest', item)
+    window.open(`/surat-preview/${getItemValue(item, 'id')}?latest=1`, '_blank')
+  }
+
   const editItem = (item) => {
     emit('edit', item)
   }
