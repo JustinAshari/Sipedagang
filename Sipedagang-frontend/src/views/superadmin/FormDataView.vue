@@ -1,5 +1,5 @@
 <script setup>
-  import { ref, computed, onMounted, onBeforeUnmount } from 'vue'
+  import { ref, computed, onMounted, onBeforeUnmount, nextTick } from 'vue'
   import { useRouter, onBeforeRouteLeave } from 'vue-router'
   import MainElement from '@/components/MainElement.vue'
   import FormElement from '@/components/FormElement.vue'
@@ -230,7 +230,7 @@
     }
   }
 
-  const handleAddPengadaan = () => {
+  const handleAddPengadaan = async () => {
     if (forms.value.length >= maxForms) {
       Swal.fire({
         title: 'Batas Terlampaui',
@@ -242,11 +242,60 @@
       return
     }
 
+    // Validate the currently active (last) form before allowing to add a new one
+    const currentIndex = forms.value.length - 1
+    const current = formRefs.value && formRefs.value[currentIndex]
+    if (current && current.validateForm) {
+      const validation = current.validateForm()
+      if (!validation.isValid) {
+        await Swal.fire({
+          title: 'Tambah Pengadaan Gagal',
+          text: `Lembar ${currentIndex + 1}: ${validation.errors.join(', ')}`,
+          icon: 'error',
+        })
+        return
+      }
+    }
+
     forms.value.push({})
+
     // wait next tick so ref mapping can update
-    setTimeout(() => {
-      handleFormChanged()
-    }, 50)
+    await nextTick()
+
+    // If there is at least one existing form, copy pemohon and PO details from the first form
+    const first = formRefs.value && formRefs.value[0]
+    const newIndex = forms.value.length - 1
+    const target = formRefs.value && formRefs.value[newIndex]
+
+    if (first && first.getFormData && target && target.populateForm) {
+      try {
+        const data = first.getFormData()
+
+        // Build minimal payload to populate target: pemohon + PO details only
+        const populatePayload = {
+          nama_suplier: data.nama_suplier || '',
+          nama_perusahaan: data.nama_perusahaan || '',
+          jenis_bank: data.jenis_bank || '',
+          no_rekening: data.no_rekening || '',
+          atasnama_rekening: data.atasnama_rekening || '',
+          no_preorder: data.no_preorder || '',
+          tanggal_pengadaan: data.tanggal_pengadaan || '',
+          tanggal_pengajuan: data.tanggal_pengajuan || '',
+          // Leave jenis_pengadaan, kuantum, in_data, jumlah_pembayaran, spp empty
+          jenis_pengadaan_barang: '',
+          kuantum: '',
+          in_data: [],
+          jumlah_pembayaran: '',
+          spp: '',
+        }
+
+        await target.populateForm(populatePayload)
+      } catch (err) {
+        console.error('Failed to populate new form from first form', err)
+      }
+    }
+
+    handleFormChanged()
   }
 
   const removeForm = (index) => {

@@ -69,32 +69,96 @@ class PengadaanController extends Controller
             }
         }
 
-        $existing = Pengadaan::where('no_preorder', $request->no_preorder)->first();
+        // Only merge into an existing record when supplier, company, and jenis_pengadaan_barang match.
+        // Otherwise allow creating a new Pengadaan with the same no_preorder.
+        $existingSame = Pengadaan::where('no_preorder', $request->no_preorder)
+            ->where('nama_suplier', $request->nama_suplier)
+            ->where('nama_perusahaan', $request->nama_perusahaan)
+            ->where('jenis_pengadaan_barang', strtoupper($request->jenis_pengadaan_barang))
+            ->first();
 
-        if ($existing) {
-            if (
-                $existing->nama_suplier === $request->nama_suplier &&
-                $existing->nama_perusahaan === $request->nama_perusahaan &&
-                strtoupper($existing->jenis_pengadaan_barang) === strtoupper($request->jenis_pengadaan_barang)
-            ) {
-                $existing->kuantum = $this->jumlahkanKuantum($existing->kuantum, $request->kuantum);
-                $existingInData = $existing->in_data ? json_decode($existing->in_data, true) : [];
-                $incomingInData = $request->in_data ?? [];
+        if ($existingSame) {
+            // Instead of merging into the existing record, create a separate Pengadaan
+            // to represent the new payment/document. Do NOT add kuantum to the existing record.
+            $incomingInData = $request->in_data ?? [];
 
-                if (is_array($incomingInData)) {
-                    $mergedInData = array_merge($existingInData, $incomingInData);
-                    $existing->in_data = json_encode($mergedInData);
-                    $existing->jumlah_pembayaran = $this->hitungJumlahPembayaran($mergedInData);
-                }
+            // Compute jumlah pembayaran only for the incoming in_data
+            $jumlahPembayaranIncoming = is_array($incomingInData) ? $this->hitungJumlahPembayaran($incomingInData) : '';
 
-                $existing->save();
-
-                return response()->json(['message' => 'Data berhasil diperbarui dengan penambahan kuantum dan in_data.'], 200);
-            } else {
+            // Ensure pengaturan exists for tax and pricing calculations
+            $pengaturan = PengaturanPengadaan::where('jenis_pengadaan_barang', strtoupper($request->jenis_pengadaan_barang))->first();
+            if (!$pengaturan) {
                 return response()->json([
-                    'message' => 'Gagal menambahkan: no_preorder sudah digunakan oleh data dengan suplier/perusahaan/barang yang berbeda.'
-                ], 409);
+                    'message' => 'Jenis pengadaan barang belum terdaftar di pengaturan. Silakan tambahkan terlebih dahulu.'
+                ], 400);
             }
+
+            $newPengadaan = new Pengadaan();
+            $newPengadaan->nama_suplier = $request->nama_suplier;
+            $newPengadaan->nama_perusahaan = $request->nama_perusahaan;
+            $newPengadaan->jenis_bank = strtoupper($request->jenis_bank);
+            $newPengadaan->no_rekening = $request->no_rekening;
+            $newPengadaan->atasnama_rekening = $request->atasnama_rekening;
+            $newPengadaan->no_preorder = $request->no_preorder;
+            $newPengadaan->tanggal_pengadaan = $request->tanggal_pengadaan;
+            $newPengadaan->tanggal_pengajuan = $request->tanggal_pengajuan;
+
+            $inputJenis = strtoupper($request->jenis_pengadaan_barang);
+            $newPengadaan->jenis_pengadaan_barang = in_array($inputJenis, ['BERAS', 'GABAH', 'MINYAK']) ? $inputJenis : $inputJenis;
+
+            // Do NOT sum kuantum with existing; store incoming kuantum as-is
+            $newPengadaan->kuantum = strtoupper($request->kuantum);
+            $newPengadaan->in_data = json_encode($incomingInData);
+            $newPengadaan->jumlah_pembayaran = $jumlahPembayaranIncoming;
+            $newPengadaan->spp = $request->filled('spp') ? (string)$request->spp : '';
+            $newPengadaan->user_id = auth()->id();
+
+            // Perhitungan pajak dan nominal untuk the new record
+            if ($pengaturan) {
+                preg_match('/([\d.]+)/', $jumlahPembayaranIncoming, $matches);
+                $jumlah = isset($matches[1]) ? (float)$matches[1] : 0;
+
+                if ($pengaturan->tanpa_pajak) {
+                    $newPengadaan->nominal = round($jumlah * $pengaturan->harga_per_satuan, 2);
+                    $newPengadaan->harga_sebelum_pajak = null;
+                    $newPengadaan->dpp = null;
+                    $newPengadaan->ppn_total = null;
+                    $newPengadaan->pph_total = null;
+                } else {
+                    $hargaSebelumPajak = $jumlah * $pengaturan->harga_per_satuan;
+                    $dpp = $hargaSebelumPajak * (100 / 111);
+                    $ppn = $dpp * ($pengaturan->ppn / 100);
+                    $pph = $dpp * ($pengaturan->pph / 100);
+                    $nominal = $dpp - $pph;
+
+                    $newPengadaan->harga_sebelum_pajak = round($hargaSebelumPajak, 2);
+                    $newPengadaan->dpp = round($dpp, 2);
+                    $newPengadaan->ppn_total = round($ppn, 2);
+                    $newPengadaan->pph_total = round($pph, 2);
+                    $newPengadaan->nominal = round($nominal, 2);
+                }
+            }
+
+            $newPengadaan->save();
+
+            // Attach parsed_in_data and spp formatting
+            $newPengadaan->parsed_in_data = $newPengadaan->in_data ? (json_decode($newPengadaan->in_data, true) ?: []) : [];
+            $newPengadaan->spp = $newPengadaan->spp ?? '';
+            $unit = '';
+            if (!empty($newPengadaan->kuantum) && preg_match('/\b(KG|LITER|PCS)\b/i', $newPengadaan->kuantum, $m)) {
+                $unit = strtoupper($m[1]);
+            }
+            if (!$unit && !empty($newPengadaan->jumlah_pembayaran) && preg_match('/\b(KG|LITER|PCS)\b/i', $newPengadaan->jumlah_pembayaran, $m2)) {
+                $unit = strtoupper($m2[1]);
+            }
+            $sppTrim = trim((string)$newPengadaan->spp);
+            if ($sppTrim !== '' && preg_match('/^[\d.]+/', $sppTrim)) {
+                $newPengadaan->spp_formatted = strtoupper($sppTrim);
+            } else {
+                $newPengadaan->spp_formatted = $unit ? ('0 ' . $unit) : '0';
+            }
+
+            return response()->json(['message' => 'Data pembayaran baru berhasil disimpan sebagai dokumen terpisah', 'data' => $newPengadaan], 201);
         }
 
         $pengaturan = PengaturanPengadaan::where('jenis_pengadaan_barang', strtoupper($request->jenis_pengadaan_barang))->first();
