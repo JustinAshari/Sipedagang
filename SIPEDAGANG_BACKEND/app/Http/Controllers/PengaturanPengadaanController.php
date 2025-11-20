@@ -33,8 +33,11 @@ class PengaturanPengadaanController extends Controller
         $validated['jenis_pengadaan_barang'] = strtoupper($validated['jenis_pengadaan_barang']);
         $validated['satuan'] = strtoupper($validated['satuan']);
         $validated['tanpa_pajak'] = $request->boolean('tanpa_pajak', false);
-        $validated['ppn'] = $validated['ppn'] ?? 12;
-        $validated['pph'] = $validated['pph'] ?? 1.5;
+    // Default PPN to 12% if not provided. Do NOT force a default PPh here.
+    // PPh should be set explicitly in the pengaturan list; if omitted it will be stored as null
+    // and upstream code should read the pengaturan value (or handle missing value appropriately).
+    $validated['ppn'] = $validated['ppn'] ?? 12;
+    // Leave 'pph' as-is (nullable). Do not implicitly default to 1.5%.
 
         if (!preg_match('/^[A-Z]+$/', $validated['satuan'])) {
             return response()->json(['message' => 'Satuan hanya boleh huruf A-Z'], 422);

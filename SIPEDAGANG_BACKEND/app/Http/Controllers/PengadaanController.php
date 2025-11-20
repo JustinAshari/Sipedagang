@@ -110,7 +110,9 @@ class PengadaanController extends Controller
                     $hargaSebelumPajak = $jumlah * $pengaturanForExisting->harga_per_satuan;
                     $dpp = $hargaSebelumPajak * (100 / 111);
                     $ppn = $dpp * ($pengaturanForExisting->ppn / 100);
-                    $pph = $dpp * ($pengaturanForExisting->pph / 100);
+                    // Use PPh from pengaturan; if null treat as 0% (no PPh)
+                    $pphRate = isset($pengaturanForExisting->pph) ? (float)$pengaturanForExisting->pph : 0.0;
+                    $pph = $dpp * ($pphRate / 100);
                     $nominal = $dpp - $pph;
 
                     $existingSame->harga_sebelum_pajak = round($hargaSebelumPajak, 2);
@@ -169,7 +171,9 @@ class PengadaanController extends Controller
                 $hargaSebelumPajak = $jumlah * $pengaturan->harga_per_satuan;
                 $dpp = $hargaSebelumPajak * (100 / 111);
                 $ppn = $dpp * ($pengaturan->ppn / 100);
-                $pph = $dpp * ($pengaturan->pph / 100);
+                // Use PPh from pengaturan; if null treat as 0% (no PPh)
+                $pphRate = isset($pengaturan->pph) ? (float)$pengaturan->pph : 0.0;
+                $pph = $dpp * ($pphRate / 100);
                 $nominal = $dpp - $pph;
 
                 $pengadaan->harga_sebelum_pajak = round($hargaSebelumPajak, 2);

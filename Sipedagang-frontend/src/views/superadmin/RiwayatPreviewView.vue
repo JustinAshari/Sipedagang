@@ -62,7 +62,9 @@
                     const hargaSebelumPajak = jumlah * parseFloat(pengaturan.harga_per_satuan)
                     const dpp = hargaSebelumPajak * (100 / 111)
                     const ppn = dpp * (pengaturan.ppn / 100)
-                    const pph = dpp * (pengaturan.pph / 100)
+                    // Use PPh from pengaturan; if missing treat as 0% (no PPh)
+                    const pphRate = (typeof pengaturan.pph !== 'undefined' && pengaturan.pph !== null) ? parseFloat(pengaturan.pph) : 0.0
+                    const pph = dpp * (pphRate / 100)
                     const nominal = dpp - pph
 
                     pengadaan.value.harga_sebelum_pajak = Math.round(hargaSebelumPajak * 100) / 100

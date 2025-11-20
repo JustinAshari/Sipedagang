@@ -121,6 +121,7 @@
   })
 
   import parseInData from '@/utils/parseInData'
+  import { useSettingPengadaanStore } from '@/stores/settingPengadaanStore'
 
   const parsedInData = computed(() => {
     try {
@@ -136,6 +137,102 @@
       return []
     }
   })
+
+  const settingPengadaanStore = useSettingPengadaanStore()
+
+  const parseKuantumNumber = (kuantumStr) => {
+    if (!kuantumStr) return 0
+    const s = kuantumStr.toString()
+    const m = s.match(/([\d.,]+)/)
+    if (!m) return 0
+    // normalize comma/period
+    const num = m[1].replace(/\./g, '').replace(',', '.')
+    return parseFloat(num) || 0
+  }
+
+  const formatCurrency = (value) => {
+    if (value === null || value === undefined) return '-'
+    return new Intl.NumberFormat('id-ID').format(Number(value))
+  }
+
+  const getHargaPerSatuanForItem = (jenis) => {
+    try {
+      if (!jenis) return 0
+      const found = settingPengadaanStore.pengaturanPengadaan.find(
+        (p) => p.jenis_pengadaan_barang?.toLowerCase() === jenis.toLowerCase(),
+      )
+      return found ? parseFloat(found.harga_per_satuan || 0) : 0
+    } catch (e) {
+      return 0
+    }
+  }
+
+  const getPengaturanForItem = (jenis) => {
+    try {
+      if (!jenis) return null
+      return settingPengadaanStore.pengaturanPengadaan.find(
+        (p) => p.jenis_pengadaan_barang?.toLowerCase() === jenis.toLowerCase(),
+      )
+    } catch (e) {
+      return null
+    }
+  }
+
+  const computeNominalForIn = (inItem) => {
+    try {
+      const rawKuantum = inItem?.kuantum || inItem?.kuantum_in || inItem?.jumlah || inItem?.jumlah_in || inItem?.kuantumIn || ''
+      const qty = parseKuantumNumber(rawKuantum)
+      const jenis = (props.item.jenis_pengadaan_barang || props.item.jenisPengadaan || '').toString()
+
+      const peng = getPengaturanForItem(jenis)
+      // prefer pengaturan.harga_per_satuan, fallback to inItem.harga_per_satuan, then to store lookup
+      let hargaPerSatuan = 0
+      if (peng && peng.harga_per_satuan) hargaPerSatuan = parseFloat(peng.harga_per_satuan)
+      else if (inItem && (inItem.harga_per_satuan || inItem.harga)) hargaPerSatuan = parseFloat(inItem.harga_per_satuan || inItem.harga)
+      else hargaPerSatuan = getHargaPerSatuanForItem(jenis)
+
+      const ppnPerc = peng && peng.ppn ? parseFloat(peng.ppn) : 0
+      const pphPerc = peng && peng.pph ? parseFloat(peng.pph) : 0
+
+      // If harga per satuan and qty are available, compute nominal
+      if (hargaPerSatuan > 0 && qty > 0) {
+        const hargaSebelumPajak = qty * hargaPerSatuan
+        const dpp = hargaSebelumPajak * (100 / 111)
+        const ppnVal = dpp * (ppnPerc / 100)
+        const pphVal = dpp * (pphPerc / 100)
+        const nominal = hargaSebelumPajak - ppnVal - pphVal
+        return Math.round((nominal + Number.EPSILON) * 100) / 100
+      }
+
+      // If inItem already carries nominal-like fields, use them
+      if (inItem && (inItem.nominal || inItem.nominal_pembayaran || inItem.jumlah_pembayaran)) {
+        const v = inItem.nominal || inItem.nominal_pembayaran || inItem.jumlah_pembayaran
+        const n = typeof v === 'number' ? v : parseFloat(String(v).replace(/[^0-9.,]/g, '').replace(/\./g, '').replace(',', '.'))
+        if (!isNaN(n)) return Math.round((n + Number.EPSILON) * 100) / 100
+      }
+
+      // Fallback: distribute parent nominal proportionally by kuantum
+      const parentNominalRaw = props.item?.nominal || props.item?.harga_sebelum_pajak || props.item?.nominal_pembayaran
+      const parentJumlahRaw = props.item?.jumlah_pembayaran || props.item?.jumlah || props.item?.kuantum
+      if (parentNominalRaw && parentJumlahRaw && qty > 0) {
+        const parentNominal = parseFloat(String(parentNominalRaw).replace(/[^0-9.,]/g, '').replace(/\./g, '').replace(',', '.'))
+        const parentJumlah = parseFloat(String(parentJumlahRaw).replace(/[^0-9.,]/g, '').replace(/\./g, '').replace(',', '.'))
+        if (!isNaN(parentNominal) && !isNaN(parentJumlah) && parentJumlah > 0) {
+          const proportional = parentNominal * (qty / parentJumlah)
+          return Math.round((proportional + Number.EPSILON) * 100) / 100
+        }
+      }
+
+      return null
+    } catch (e) {
+      return null
+    }
+  }
+
+  const formatNominalForIn = (inItem) => {
+    const val = computeNominalForIn(inItem)
+    return val === null || val === undefined ? '-' : formatCurrency(val)
+  }
 
   const formatKuantum = (value) => {
     if (!value || value === 'N/A') {
@@ -340,27 +437,25 @@
       <div class="p-3">
         <div v-if="parsedInData.length > 0" class="space-y-3">
           <h4 class="font-medium text-gray-700 mb-2">Detail IN Data</h4>
-          <div class="grid gap-3">
-            <div v-for="(inItem, idx) in parsedInData" :key="idx" class="bg-white p-3 rounded-lg border border-gray-200">
-              <div class="grid grid-cols-2 sm:grid-cols-4 gap-2 text-sm">
-                <div>
-                  <span class="text-gray-500">Tanggal:</span>
-                  <div class="font-medium">{{ formatDate(inItem.tanggal) }}</div>
-                </div>
-                <div>
-                  <span class="text-gray-500">DO Number:</span>
-                  <div class="font-medium">{{ inItem.no_do || '-' }}</div>
-                </div>
-                <div>
-                  <span class="text-gray-500">Kuantum:</span>
-                  <div class="font-medium">{{ formatKuantum(inItem.kuantum) || '-' }}</div>
-                </div>
-                <div>
-                  <span class="text-gray-500">Keterangan:</span>
-                  <div class="font-medium">{{ inItem.keterangan || '-' }}</div>
-                </div>
-              </div>
-            </div>
+          <div class="overflow-x-auto bg-white rounded-lg border border-gray-200">
+            <table class="min-w-full text-sm">
+              <thead>
+                <tr class="bg-gray-50 text-left">
+                  <th class="px-3 py-2">No</th>
+                  <th class="px-3 py-2">Tanggal</th>
+                  <th class="px-3 py-2">Kuantum Data IN</th>
+                  <th class="px-3 py-2 text-right">Nominal pembayaran</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr v-for="(inItem, idx) in parsedInData" :key="idx" class="border-t">
+                  <td class="px-3 py-2 align-top">{{ idx + 1 }}</td>
+                  <td class="px-3 py-2 align-top">{{ formatDate(inItem.tanggal || inItem.tanggal_in || inItem.date) }}</td>
+                  <td class="px-3 py-2 align-top">{{ formatKuantum(inItem.kuantum || inItem.kuantum_in || inItem.jumlah || inItem.jumlah_pembayaran) || '-' }}</td>
+                  <td class="px-3 py-2 align-top text-right">{{ formatNominalForIn(inItem) }}</td>
+                </tr>
+              </tbody>
+            </table>
           </div>
         </div>
         <div v-else class="text-center text-gray-500 py-3">Tidak ada data IN</div>
