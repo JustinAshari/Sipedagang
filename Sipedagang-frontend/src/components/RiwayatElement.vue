@@ -152,7 +152,11 @@
 
   const formatCurrency = (value) => {
     if (value === null || value === undefined) return '-'
-    return new Intl.NumberFormat('id-ID').format(Number(value))
+    const num = Number(value)
+    if (isNaN(num)) return '-'
+    const formatted = new Intl.NumberFormat('id-ID', { minimumFractionDigits: 0, maximumFractionDigits: 2 }).format(num)
+    // If formatted contains decimal comma, keep it and append ',-' after; otherwise append ',-'
+    return `Rp. ${formatted},-`
   }
 
   const getHargaPerSatuanForItem = (jenis) => {
@@ -233,6 +237,57 @@
     const val = computeNominalForIn(inItem)
     return val === null || val === undefined ? '-' : formatCurrency(val)
   }
+
+  const totalNominalPaid = computed(() => {
+    try {
+      return parsedInData.value.reduce((acc, inItem) => {
+        const v = computeNominalForIn(inItem)
+        return acc + (v ? Number(v) : 0)
+      }, 0)
+    } catch (e) {
+      return 0
+    }
+  })
+
+  const parseKuantumParts = (kuantumStr) => {
+    if (!kuantumStr) return { value: 0, unit: null }
+    const s = kuantumStr.toString().trim()
+    // Try to match number and unit like '1.410 KG' or '490 KG' or '1500'
+    const m = s.match(/([\d.,]+)\s*(KG|LITER|PCS)?/i)
+    if (!m) return { value: 0, unit: null }
+    let num = m[1].replace(/\./g, '').replace(',', '.')
+    const value = parseFloat(num) || 0
+    const unit = m[2] ? m[2].toUpperCase() : null
+    return { value, unit }
+  }
+
+  const totalKuantumByUnit = computed(() => {
+    const totals = {}
+    try {
+      parsedInData.value.forEach((inItem) => {
+        const raw = inItem?.kuantum || inItem?.kuantum_in || inItem?.jumlah || inItem?.jumlah_pembayaran || inItem?.kuantumIn || ''
+        const parts = parseKuantumParts(raw)
+        const unit = parts.unit || 'UNIT'
+        totals[unit] = (totals[unit] || 0) + (parts.value || 0)
+      })
+    } catch (e) {
+      // ignore
+    }
+    return totals
+  })
+
+  const totalKuantumDisplay = computed(() => {
+    const units = Object.keys(totalKuantumByUnit.value)
+    if (units.length === 0) return '-'
+    const parts = units.map((u) => {
+      const v = totalKuantumByUnit.value[u]
+      if (!v) return null
+      // format number with thousand separators, no decimals
+      const fmt = new Intl.NumberFormat('id-ID', { minimumFractionDigits: 0, maximumFractionDigits: 3 }).format(v)
+      return `${fmt} ${u === 'UNIT' ? '' : u}`.trim()
+    }).filter(Boolean)
+    return parts.join(' + ')
+  })
 
   const formatKuantum = (value) => {
     if (!value || value === 'N/A') {
@@ -457,32 +512,42 @@
               </tbody>
             </table>
           </div>
+          <div class="mt-2 flex justify-between items-center">
+            <div>
+              <span class="text-gray-600">Total Kuantum Data IN:</span>
+              <div class="font-medium">{{ totalKuantumDisplay }}</div>
+            </div>
+            <div class="text-right">
+              <span class="text-gray-600">Total Nominal Pembayaran:</span>
+              <div class="font-semibold">{{ formatCurrency(totalNominalPaid) }}</div>
+            </div>
+          </div>
         </div>
         <div v-else class="text-center text-gray-500 py-3">Tidak ada data IN</div>
       </div>
       <!-- Show price/tax info if available from server-cached detail or props -->
       <div v-if="pengadaanStore.pengadaanDetails[item.id] || item.harga_sebelum_pajak || item.dpp || item.ppn_total || item.pph_total || item.nominal" class="p-3 border-t bg-white mt-3">
         <h5 class="font-medium mb-2">Informasi Harga & Pajak</h5>
-        <div class="grid grid-cols-2 gap-2 text-sm">
+          <div class="grid grid-cols-2 gap-2 text-sm">
           <div>
             <span class="text-gray-500">Harga Sebelum Pajak:</span>
-            <div class="font-medium">{{ (pengadaanStore.pengadaanDetails[item.id]?.harga_sebelum_pajak ?? item.harga_sebelum_pajak) ?? '-' }}</div>
+            <div class="font-medium">{{ formatCurrency((pengadaanStore.pengadaanDetails[item.id]?.harga_sebelum_pajak ?? item.harga_sebelum_pajak) ?? null) }}</div>
           </div>
           <div>
             <span class="text-gray-500">DPP:</span>
-            <div class="font-medium">{{ (pengadaanStore.pengadaanDetails[item.id]?.dpp ?? item.dpp) ?? '-' }}</div>
+            <div class="font-medium">{{ formatCurrency((pengadaanStore.pengadaanDetails[item.id]?.dpp ?? item.dpp) ?? null) }}</div>
           </div>
           <div>
             <span class="text-gray-500">PPN:</span>
-            <div class="font-medium">{{ (pengadaanStore.pengadaanDetails[item.id]?.ppn_total ?? item.ppn_total) ?? '-' }}</div>
+            <div class="font-medium">{{ formatCurrency((pengadaanStore.pengadaanDetails[item.id]?.ppn_total ?? item.ppn_total) ?? null) }}</div>
           </div>
           <div>
             <span class="text-gray-500">PPH:</span>
-            <div class="font-medium">{{ (pengadaanStore.pengadaanDetails[item.id]?.pph_total ?? item.pph_total) ?? '-' }}</div>
+            <div class="font-medium">{{ formatCurrency((pengadaanStore.pengadaanDetails[item.id]?.pph_total ?? item.pph_total) ?? null) }}</div>
           </div>
           <div class="col-span-2">
             <span class="text-gray-500">Nominal:</span>
-            <div class="font-medium">{{ (pengadaanStore.pengadaanDetails[item.id]?.nominal ?? item.nominal) ?? '-' }}</div>
+            <div class="font-medium">{{ formatCurrency((pengadaanStore.pengadaanDetails[item.id]?.nominal ?? item.nominal) ?? null) }}</div>
           </div>
         </div>
       </div>
