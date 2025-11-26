@@ -678,7 +678,7 @@
     </div>
 
     <div class="text-center pb-6 text-gray-600 text-[10px] sm:text-sm">
-      <p>Copyright @ 2025 Pengadaan Komoditas Kantor Cabang Surakarta</p>
+      <p>Copyright @ 2025 Pengadaan Komoditas Kantor Cabang Surakarta MasbeID</p>
     </div>
   </section>
 </template>

@@ -367,7 +367,7 @@
   <div
     class="absolute items-center lg:items-end bottom-0 flex flex-col w-full pr-3 mb-3 text-[#232323] text-[12px] md:text-sm md:text-white"
   >
-    <p>Copyright @ 2025 Pengadaan Komoditas Kantor Cabang Surakarta</p>
+    <p>Copyright @ 2025 Pengadaan Komoditas Kantor Cabang Surakarta MasbeID</p>
   </div>
 </template>
 
