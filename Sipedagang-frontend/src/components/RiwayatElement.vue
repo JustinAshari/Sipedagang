@@ -513,7 +513,7 @@
             </table>
           </div>
           <div class="mt-2 flex justify-between items-center">
-            <div>
+            <div class="text-left">
               <span class="text-gray-600">Total Kuantum Data IN:</span>
               <div class="font-medium">{{ totalKuantumDisplay }}</div>
             </div>
