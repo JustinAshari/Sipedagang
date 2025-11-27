@@ -308,6 +308,114 @@
 
     return unitPart ? `${formattedNumber} ${unitPart}` : formattedNumber
   }
+
+    // ✅ Perbaiki function untuk menerima parameter item
+    const handleCopy = async (item) => {
+      try {
+        // Ambil data IN terbaru (data terakhir dari parsed in_data)
+        const latestInData = parsedInData.value.length > 0 
+          ? parsedInData.value[parsedInData.value.length - 1] 
+          : null
+
+        // Format: "Jenis Pengadaan, No Preorder, No IN = Kuantum Satuan"
+        let textToCopy = ''
+        
+        if (latestInData) {
+          const jenisPengadaan = jenisPengadaanFormatted.value
+          const noPreorder = item.no_preorder || item.noPreorder || '-'
+          const noIn = latestInData.no_in || latestInData.noIn || '-'
+          const kuantumIn = formatKuantum(
+            latestInData.kuantum || 
+            latestInData.kuantum_in || 
+            latestInData.jumlah || 
+            latestInData.jumlah_pembayaran || 
+            '-'
+          )
+          
+          textToCopy = `${jenisPengadaan}, ${noPreorder}, ${noIn} = ${kuantumIn}`
+        } else {
+          // Jika tidak ada data IN, tampilkan format alternatif
+          const jenisPengadaan = jenisPengadaanFormatted.value
+          const noPreorder = item.no_preorder || item.noPreorder || '-'
+          textToCopy = `${jenisPengadaan}, ${noPreorder}, - = Belum ada data IN`
+        }
+
+        // Copy ke clipboard
+        await navigator.clipboard.writeText(textToCopy)
+
+        // Tampilkan notifikasi sukses
+        Swal.fire({
+          title: 'Berhasil!',
+          text: 'Data berhasil disalin ke clipboard',
+          icon: 'success',
+          timer: 1500,
+          showConfirmButton: false,
+          timerProgressBar: true,
+        })
+      } catch (error) {
+        console.error('Error copying:', error)
+        Swal.fire({
+          title: 'Error!',
+          text: 'Gagal menyalin data',
+          icon: 'error',
+          confirmButtonColor: '#d33',
+        })
+      }
+    }
+
+// Ambil kuantum induk dari kolom Kuantum (bukan SPP)
+const kuantumInduk = computed(() => {
+  // Gunakan kolom kuantum dari item induk
+  const kuantumStr = props.item.kuantum || props.item.jumlah || ""
+  const parts = parseKuantumParts(kuantumStr)
+  return parts.value || 0
+})
+
+// Unit satuan dari kuantum induk
+const satuanPengadaan = computed(() => {
+  const kuantumStr = props.item.kuantum || props.item.jumlah || ""
+  const parts = parseKuantumParts(kuantumStr)
+  return parts.unit || 'UNIT'
+})
+
+// Total kuantum IN dari semua data IN (berdasarkan unit yang sama)
+const totalKuantumIN = computed(() => {
+  const unit = satuanPengadaan.value
+  return totalKuantumByUnit.value[unit] || 0
+})
+
+// Belum IN = Kuantum Induk - Total Kuantum Data IN
+const belumIN = computed(() => {
+  const sisa = kuantumInduk.value - totalKuantumIN.value
+  return sisa > 0 ? sisa : 0
+})
+
+// Format Belum IN dengan unit dan pemisah ribuan
+const belumINDisplay = computed(() => {
+  const nilai = belumIN.value
+  if (nilai === 0) return '0'
+  const fmt = new Intl.NumberFormat('id-ID', { 
+    minimumFractionDigits: 0, 
+    maximumFractionDigits: 3 
+  }).format(nilai)
+  const unit = satuanPengadaan.value
+  return `${fmt} ${unit === 'UNIT' ? '' : unit}`.trim()
+})
+
+// Nominal total yang harus dibayar (dari item induk)
+const totalNominalHarusDibayar = computed(() => {
+  const nominal = props.item.nominal || 
+                  props.item.nominal_pembayaran || 
+                  props.item.jumlah_pembayaran ||
+                  props.item.harga_sebelum_pajak
+  return nominal ? Number(nominal) : 0
+})
+
+// Nominal belum pembayaran
+const nominalBelumPembayaran = computed(() => {
+  const sisa = totalNominalHarusDibayar.value - totalNominalPaid.value
+  return sisa > 0 ? sisa : 0
+})
 </script>
 
 <template>
@@ -417,6 +525,28 @@
           </svg>
         </button>
 
+        <!-- Copy -->
+         <button
+                  @click.stop="handleCopy(item)"
+                  class="p-1.5 bg-emerald-100 text-emerald-600 rounded hover:bg-emerald-200"
+                  title="Salin Data"
+                >
+                  <svg
+                    xmlns="http://www.w3.org/2000/svg"
+                    fill="none"
+                    viewBox="0 0 24 24"
+                    stroke-width="1.5"
+                    stroke="currentColor"
+                    class="h-3 w-3"
+                  >
+                    <path
+                      stroke-linecap="round"
+                      stroke-linejoin="round"
+                      d="M15.75 17.25v3.375c0 .621-.504 1.125-1.125 1.125h-9.75a1.125 1.125 0 01-1.125-1.125V7.875c0-.621.504-1.125 1.125-1.125H6.75a9.06 9.06 0 011.5.124m7.5 10.376h3.375c.621 0 1.125-.504 1.125-1.125V11.25c0-4.46-3.243-8.161-7.5-8.876a9.06 9.06 0 00-1.5-.124H9.375c-.621 0-1.125.504-1.125 1.125v3.5m7.5 10.375H9.375a1.125 1.125 0 01-1.125-1.125v-9.25m12 6.625v-1.875a3.375 3.375 0 00-3.375-3.375h-1.5a1.125 1.125 0 01-1.125-1.125v-1.5a3.375 3.375 0 00-3.375-3.375H9.75"
+                    />
+                  </svg>
+                </button>
+
         <!-- Print Latest Button -->
         <button
           @click.stop="openPrintLatest"
@@ -497,57 +627,70 @@
               <thead>
                 <tr class="bg-gray-50 text-left">
                   <th class="px-3 py-2">No</th>
+                  <th class="px-3 py-2">No IN</th>
                   <th class="px-3 py-2">Tanggal</th>
                   <th class="px-3 py-2">Kuantum Data IN</th>
                   <th class="px-3 py-2 text-right">Nominal pembayaran</th>
                 </tr>
               </thead>
+              
               <tbody>
                 <tr v-for="(inItem, idx) in parsedInData" :key="idx" class="border-t">
+                  <!-- Kolom No -->
                   <td class="px-3 py-2 align-top">{{ idx + 1 }}</td>
-                  <td class="px-3 py-2 align-top">{{ formatDate(inItem.tanggal || inItem.tanggal_in || inItem.date) }}</td>
-                  <td class="px-3 py-2 align-top">{{ formatKuantum(inItem.kuantum || inItem.kuantum_in || inItem.jumlah || inItem.jumlah_pembayaran) || '-' }}</td>
-                  <td class="px-3 py-2 align-top text-right">{{ formatNominalForIn(inItem) }}</td>
+
+                  <!-- Kolom No IN -->
+                  <td class="px-3 py-2 align-top">
+                    {{ inItem.no_in ?? inItem.noIn ?? '-' }}
+                  </td>
+
+                  <!-- Kolom Tanggal -->
+                  <td class="px-3 py-2 align-top">
+                    {{ formatDate(inItem.tanggal ?? inItem.tanggal_in ?? inItem.date) }}
+                  </td>
+
+                  <!-- Kolom Kuantum -->
+                  <td class="px-3 py-2 align-top">
+                    {{ formatKuantum(
+                        inItem.kuantum ??
+                        inItem.kuantum_in ??
+                        inItem.jumlah ??
+                        inItem.jumlah_pembayaran ??
+                        null
+                      ) }}
+                  </td>
+
+                  <!-- Kolom Nominal -->
+                  <td class="px-3 py-2 align-top text-right">
+                    {{ formatNominalForIn(inItem) }}
+                  </td>
                 </tr>
+
               </tbody>
             </table>
-          </div>
-          <div class="mt-2 flex justify-between items-center">
-            <div class="text-left">
-              <span class="text-gray-600">Total Kuantum Data IN:</span>
-              <div class="font-medium">{{ totalKuantumDisplay }}</div>
-            </div>
-            <div class="text-right">
-              <span class="text-gray-600">Total Nominal Pembayaran:</span>
-              <div class="font-semibold">{{ formatCurrency(totalNominalPaid) }}</div>
-            </div>
           </div>
         </div>
         <div v-else class="text-center text-gray-500 py-3">Tidak ada data IN</div>
       </div>
-      <!-- Show price/tax info if available from server-cached detail or props -->
+      <!-- Show Informasi Pembayaran & Kuantum if available from server-cached detail or props -->
       <div v-if="pengadaanStore.pengadaanDetails[item.id] || item.harga_sebelum_pajak || item.dpp || item.ppn_total || item.pph_total || item.nominal" class="p-3 border-t bg-white mt-3">
-        <h5 class="font-medium mb-2">Informasi Harga & Pajak</h5>
+        <h5 class="font-medium mb-2">Informasi Pembayaran & Kuantum</h5>
           <div class="grid grid-cols-2 gap-2 text-sm">
           <div>
-            <span class="text-gray-500">Harga Sebelum Pajak:</span>
-            <div class="font-medium">{{ formatCurrency((pengadaanStore.pengadaanDetails[item.id]?.harga_sebelum_pajak ?? item.harga_sebelum_pajak) ?? null) }}</div>
+            <span class="text-gray-500">Total Nominal Pembayaran:</span>
+            <div class="font-medium">{{ formatCurrency(totalNominalPaid) }}</div>
           </div>
           <div>
-            <span class="text-gray-500">DPP:</span>
-            <div class="font-medium">{{ formatCurrency((pengadaanStore.pengadaanDetails[item.id]?.dpp ?? item.dpp) ?? null) }}</div>
+            <span class="text-gray-500">Total Kuantum Data IN:</span>
+            <div class="font-medium">{{ totalKuantumDisplay }}</div>
           </div>
           <div>
-            <span class="text-gray-500">PPN:</span>
-            <div class="font-medium">{{ formatCurrency((pengadaanStore.pengadaanDetails[item.id]?.ppn_total ?? item.ppn_total) ?? null) }}</div>
+            <span class="text-gray-500">Nominal Belum Pembayaran:</span>
+            <div class="font-medium">{{ formatCurrency(nominalBelumPembayaran) }}</div>
           </div>
           <div>
-            <span class="text-gray-500">PPH:</span>
-            <div class="font-medium">{{ formatCurrency((pengadaanStore.pengadaanDetails[item.id]?.pph_total ?? item.pph_total) ?? null) }}</div>
-          </div>
-          <div class="col-span-2">
-            <span class="text-gray-500">Nominal:</span>
-            <div class="font-medium">{{ formatCurrency((pengadaanStore.pengadaanDetails[item.id]?.nominal ?? item.nominal) ?? null) }}</div>
+            <span class="text-gray-500">Belum IN:</span>
+            <div class="font-medium text-red-600">{{ belumINDisplay }}</div>
           </div>
         </div>
       </div>

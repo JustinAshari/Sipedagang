@@ -1143,6 +1143,7 @@
                   </td>
                   <td class="px-2 py-2">
                     <div class="flex justify-center space-x-1">
+                      
                       <button
                         @click="printItem(item)"
                         class="p-1 text-purple-600 bg-purple-100 rounded hover:bg-purple-200"

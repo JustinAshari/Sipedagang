@@ -65,6 +65,14 @@
     return 0
   })
 
+  // Ambil persentase PPN dari settingPengadaan
+  const ppnPersentase = computed(() => {
+    if (settingPengadaan.value?.ppn) {
+      return parseFloat(settingPengadaan.value.ppn)
+    }
+    return 0
+  })
+
   const hargaSebelumPajak = computed(() => {
     return parseFloat(props.item?.harga_sebelum_pajak) || 0
   })
@@ -208,8 +216,8 @@
             </div>
             <div>
               {{ jenisPengadaanCapital }}
-              {{ formatRupiah(angkaSaja(item.kuantum)) }}
-              <span class="lowercase">{{ satuanSaja(item.kuantum) }}</span>
+              {{ formatRupiah(angkaSaja(item.jumlah_pembayaran)) }}
+              <span class="lowercase">{{satuanSaja(item.jumlah_pembayaran)}}</span>
               sesuai dengan PO/{{ item.no_preorder }} Tahun {{ tahunPengadaan }}
             </div>
 
@@ -242,7 +250,7 @@
                 <div>Rp. {{ formatRupiah(dpp) }},-</div>
               </div>
               <div class="flex justify-between" v-if="ppnTotal !== 0">
-                <div>PPN 12%</div>
+                <div>PPN {{ ppnPersentase }}%</div>
                 <div>Rp. {{ formatRupiah(ppnTotal) }},-</div>
               </div>
               <div class="flex justify-between" v-if="pphTotal !== 0">
