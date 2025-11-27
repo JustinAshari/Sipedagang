@@ -254,7 +254,7 @@
                 <div>Rp. {{ formatRupiah(ppnTotal) }},-</div>
               </div>
               <div class="flex justify-between" v-if="pphTotal !== 0">
-                <div>PPH 22</div>
+                <div>PPH </div>
                 <div>Rp. {{ formatRupiah(pphTotal) }},-</div>
               </div>
               <div class="flex justify-between font-bold">

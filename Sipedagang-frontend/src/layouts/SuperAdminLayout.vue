@@ -438,7 +438,7 @@
 
               <!-- SETTING PENGADAAN -->
               <RouterLink
-                to="/superadmin/settingpengadaan"
+                to="/superadmin/settingpengadaan-list"
                 @click="closeSidebarOnRoute"
                 class="group flex px-4 sm:px-7 w-full h-10 sm:h-12 rounded-xl transition-all duration-300 ease-in-out backdrop-blur-sm"
                 :class="[

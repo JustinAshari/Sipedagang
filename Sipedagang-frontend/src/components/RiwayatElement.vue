@@ -501,30 +501,6 @@ const nominalBelumPembayaran = computed(() => {
     <!-- Action Buttons -->
     <td class="px-1 lg:px-2 py-2 lg:py-3 text-center">
       <div class="flex space-x-1 justify-center items-center">
-        <!-- Print Button -->
-        <button
-          @click.stop="openPrintPreview"
-          class="cursor-pointer text-[#2B79EF] hover:text-white transition-all duration-200 p-1.5 rounded-full hover:bg-[#2B79EF] group"
-          title="Cetak Dokumen"
-        >
-          <svg
-            xmlns="http://www.w3.org/2000/svg"
-            fill="white"
-            viewBox="0 0 24 24"
-            stroke-width="1.5"
-            stroke="currentColor"
-            width="18"
-            height="18"
-            class="group-hover:fill-white transition-all"
-          >
-            <path
-              stroke-linecap="round"
-              stroke-linejoin="round"
-              d="M6.75 3.75A2.25 2.25 0 0 0 4.5 6v3.75m15 0V6a2.25 2.25 0 0 0-2.25-2.25h-9m11.25 6V18a2.25 2.25 0 0 1-2.25 2.25H6.75A2.25 2.25 0 0 1 4.5 18V9.75m15 0H4.5m3 6h9m-6 3h3"
-            />
-          </svg>
-        </button>
-
         <!-- Copy -->
          <button
                   @click.stop="handleCopy(item)"
@@ -685,8 +661,8 @@ const nominalBelumPembayaran = computed(() => {
             <div class="font-medium">{{ totalKuantumDisplay }}</div>
           </div>
           <div>
-            <span class="text-gray-500">Nominal Belum Pembayaran:</span>
-            <div class="font-medium">{{ formatCurrency(nominalBelumPembayaran) }}</div>
+            <span class="text-white">Nominal Belum Pembayaran:</span>
+            <div class="font-medium text-white">{{ formatCurrency(nominalBelumPembayaran) }}</div>
           </div>
           <div>
             <span class="text-gray-500">Belum IN:</span>
