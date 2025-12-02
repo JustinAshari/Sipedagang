@@ -1,6 +1,7 @@
 <script setup>
   import { computed } from 'vue'
   import { useSettingPengadaanStore } from '@/stores/settingPengadaanStore'
+  import parseInData from '@/utils/parseInData'
 
   const props = defineProps({
     item: {
@@ -27,10 +28,42 @@
     'Desember',
   ]
 
+  const formatTanggalIndo = (dateObj) => {
+    if (!dateObj) return ''
+    const day = dateObj.getDate()
+    const month = bulanIndo[dateObj.getMonth() + 1]
+    const year = dateObj.getFullYear()
+    return `${day} ${month} ${year}`
+  }
+
+  const dataInEntries = computed(() => {
+    if (props.item?.parsed_in_data && Array.isArray(props.item.parsed_in_data)) {
+      return props.item.parsed_in_data
+    }
+    return parseInData(props.item?.in_data)
+  })
+
+  const latestInDate = computed(() => {
+    let latest = null
+    dataInEntries.value.forEach((entry) => {
+      const raw = entry?.tanggal_in || entry?.tanggal || entry?.date
+      if (!raw) return
+      const dateObj = new Date(raw)
+      if (Number.isNaN(dateObj.getTime())) return
+      if (!latest || dateObj > latest) {
+        latest = dateObj
+      }
+    })
+    return latest
+  })
+
   const tanggalSurat = computed(() => {
+    if (latestInDate.value) {
+      return formatTanggalIndo(latestInDate.value)
+    }
     if (!props.item?.tanggal_pengajuan) return ''
-    const [tahun, bulan] = props.item.tanggal_pengajuan.split('-')
-    return `${bulanIndo[parseInt(bulan)]} ${tahun}`
+    const [tahun, bulan, tanggal = '1'] = props.item.tanggal_pengajuan.split('-')
+    return `${parseInt(tanggal)} ${bulanIndo[parseInt(bulan)]} ${tahun}`
   })
 
   const jenisPengadaanCapital = computed(() => {

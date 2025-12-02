@@ -44,7 +44,32 @@
     'Desember',
   ]
 
+  const formatTanggalIndo = (dateObj) => {
+    if (!dateObj) return ''
+    const day = dateObj.getDate()
+    const month = bulanIndo[dateObj.getMonth() + 1]
+    const year = dateObj.getFullYear()
+    return `${day} ${month} ${year}`
+  }
+
+  const latestInDate = computed(() => {
+    let latest = null
+    dataInList.value.forEach((entry) => {
+      const raw = entry?.tanggal_in || entry?.tanggal || entry?.date
+      if (!raw) return
+      const dateObj = new Date(raw)
+      if (Number.isNaN(dateObj.getTime())) return
+      if (!latest || dateObj > latest) {
+        latest = dateObj
+      }
+    })
+    return latest
+  })
+
   const tanggalSurat = computed(() => {
+    if (latestInDate.value) {
+      return formatTanggalIndo(latestInDate.value)
+    }
     if (!props.item?.tanggal_pengajuan) return ''
     const [tahun, bulan, tanggal] = props.item.tanggal_pengajuan.split('-')
     return `${parseInt(tanggal)} ${bulanIndo[parseInt(bulan)]} ${tahun}`
