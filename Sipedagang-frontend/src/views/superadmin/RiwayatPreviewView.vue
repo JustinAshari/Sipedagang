@@ -14,6 +14,72 @@
   const pengadaan = ref(null)
   const isLoading = ref(true)
 
+  const extractInDate = (entry) => {
+    if (!entry) return null
+    const raw = entry.tanggal_in || entry.tanggal || entry.date
+    if (!raw) return null
+    const dateObj = new Date(raw)
+    return Number.isNaN(dateObj.getTime()) ? null : dateObj
+  }
+
+  const filterLatestEntriesByDate = (entries) => {
+    if (!Array.isArray(entries) || entries.length === 0) {
+      return { latestEntries: [], latestTimestamp: null }
+    }
+
+    let maxTime = null
+    const normalized = entries.map((entry) => ({ entry, dateObj: extractInDate(entry) }))
+
+    normalized.forEach(({ dateObj }) => {
+      if (!dateObj) return
+      const time = dateObj.getTime()
+      if (maxTime === null || time > maxTime) {
+        maxTime = time
+      }
+    })
+
+    if (maxTime === null) {
+      return { latestEntries: [entries[entries.length - 1]], latestTimestamp: null }
+    }
+
+    const latestEntries = normalized
+      .filter(({ dateObj }) => dateObj && dateObj.getTime() === maxTime)
+      .map(({ entry }) => entry)
+
+    return { latestEntries, latestTimestamp: maxTime }
+  }
+
+  const extractNumericAndUnit = (rawValue) => {
+    if (!rawValue) return { value: 0, unit: '' }
+    const match = rawValue.toString().match(/([\d.,]+)\s*(KG|LITER|PCS)?/i)
+    if (!match) return { value: 0, unit: '' }
+    const value = parseFloat(match[1].replace(/\./g, '').replace(',', '.')) || 0
+    const unit = match[2] ? match[2].toUpperCase() : ''
+    return { value, unit }
+  }
+
+  const summarizeKuantumEntries = (entries) => {
+    let totalValue = 0
+    let detectedUnit = ''
+    entries.forEach((entry) => {
+      const raw = entry?.kuantum_in || entry?.kuantum || entry?.jumlah || entry?.jumlah_pembayaran
+      if (!raw) return
+      const { value, unit } = extractNumericAndUnit(raw)
+      totalValue += value
+      if (!detectedUnit && unit) detectedUnit = unit
+    })
+
+    const formatted = totalValue > 0
+      ? `${new Intl.NumberFormat('id-ID', { minimumFractionDigits: 0, maximumFractionDigits: 3 }).format(totalValue)}${detectedUnit ? ` ${detectedUnit}` : ''}`
+      : ''
+
+    return {
+      totalValue,
+      formatted,
+      unit: detectedUnit,
+    }
+  }
+
   onMounted(async () => {
     const id = route.params.id
     const latestOnly = route.query && (route.query.latest === '1' || route.query.latest === 'true')
@@ -25,7 +91,7 @@
         // Kemudian load data pengadaan
         pengadaan.value = await pengadaanStore.fetchPengadaanById(id)
 
-        // Jika diminta hanya cetak data IN terbaru, potong in_data ke elemen terakhir saja
+        // Jika diminta hanya cetak data IN terbaru, ambil semua entri dengan tanggal paling baru
         if (pengadaan.value && latestOnly) {
           try {
             let inData = pengadaan.value.in_data || pengadaan.value.parsed_in_data || []
@@ -33,13 +99,27 @@
               inData = JSON.parse(inData)
             }
             if (Array.isArray(inData) && inData.length > 0) {
-              const last = inData[inData.length - 1]
-              // Set only the last IN entry
-              pengadaan.value = Object.assign({}, pengadaan.value, { in_data: [last], parsed_in_data: [last] })
+              const { latestEntries } = filterLatestEntriesByDate(inData)
+              const selectedEntries = latestEntries && latestEntries.length > 0 ? latestEntries : [inData[inData.length - 1]]
 
-              // Set jumlah_pembayaran to follow the latest IN kuantum_in
-              const latestKuantum = last.kuantum_in || last.kuantum || ''
-              pengadaan.value.jumlah_pembayaran = latestKuantum
+              pengadaan.value = Object.assign({}, pengadaan.value, {
+                in_data: selectedEntries,
+                parsed_in_data: selectedEntries,
+              })
+
+              const summary = summarizeKuantumEntries(selectedEntries)
+              const fallbackLatest = selectedEntries[selectedEntries.length - 1]
+              const fallbackKuantum = fallbackLatest
+                ? fallbackLatest.kuantum_in || fallbackLatest.kuantum || fallbackLatest.jumlah || fallbackLatest.jumlah_pembayaran || ''
+                : ''
+              const jumlahKuantumDisplay = summary.formatted || fallbackKuantum || ''
+              const jumlahNumerik = summary.totalValue > 0
+                ? summary.totalValue
+                : extractNumericAndUnit(fallbackKuantum).value
+
+              if (jumlahKuantumDisplay) {
+                pengadaan.value.jumlah_pembayaran = jumlahKuantumDisplay
+              }
 
               // Keep the PO kuantum unchanged; do not overwrite pengadaan.value.kuantum
 
@@ -48,9 +128,7 @@
                 const jenis = (pengadaan.value.jenis_pengadaan_barang || '').toLowerCase()
                 const pengaturan = settingPengadaanStore.pengaturanPengadaan.find(p => p.jenis_pengadaan_barang?.toLowerCase() === jenis)
                 if (pengaturan) {
-                  // extract numeric amount from latestKuantum
-                  const match = (latestKuantum || '').toString().match(/([\d.]+)/)
-                  const jumlah = match ? parseFloat(match[1]) : 0
+                  const jumlah = jumlahNumerik || 0
 
                   if (pengaturan.tanpa_pajak) {
                     pengadaan.value.harga_sebelum_pajak = null

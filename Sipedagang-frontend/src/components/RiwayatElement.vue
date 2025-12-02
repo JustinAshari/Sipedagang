@@ -289,6 +289,37 @@
     return parts.join(' + ')
   })
 
+  const extractInDate = (inItem) => {
+    if (!inItem) return null
+    const raw = inItem.tanggal_in || inItem.tanggal || inItem.date
+    if (!raw) return null
+    const dateObj = new Date(raw)
+    if (Number.isNaN(dateObj.getTime())) return null
+    return dateObj
+  }
+
+  const latestInTimestamp = computed(() => {
+    let maxTime = null
+    parsedInData.value.forEach((item) => {
+      const dateObj = extractInDate(item)
+      if (!dateObj) return
+      const time = dateObj.getTime()
+      if (maxTime === null || time > maxTime) {
+        maxTime = time
+      }
+    })
+    return maxTime
+  })
+
+  const latestInEntries = computed(() => {
+    const maxTime = latestInTimestamp.value
+    if (maxTime === null) return []
+    return parsedInData.value.filter((item) => {
+      const dateObj = extractInDate(item)
+      return dateObj && dateObj.getTime() === maxTime
+    })
+  })
+
   const formatKuantum = (value) => {
     if (!value || value === 'N/A') {
       return value // Jika tidak ada nilai atau 'N/A', kembalikan apa adanya
@@ -312,38 +343,39 @@
     // ✅ Perbaiki function untuk menerima parameter item
     const handleCopy = async (item) => {
       try {
-        // Ambil data IN terbaru (data terakhir dari parsed in_data)
-        const latestInData = parsedInData.value.length > 0 
-          ? parsedInData.value[parsedInData.value.length - 1] 
-          : null
+        const entries = latestInEntries.value.length > 0 ? latestInEntries.value : parsedInData.value.slice(-1)
 
-        // Format: "Jenis Pengadaan, No Preorder, No IN = Kuantum Satuan"
+        // Format: satu baris per IN terbaru (berdasarkan tanggal terbaru)
         let textToCopy = ''
-        
-        if (latestInData) {
+
+        if (entries && entries.length > 0) {
           const jenisPengadaan = jenisPengadaanFormatted.value
           const noPreorder = item.no_preorder || item.noPreorder || '-'
-          const noIn = latestInData.no_in || latestInData.noIn || '-'
-          const kuantumIn = formatKuantum(
-            latestInData.kuantum || 
-            latestInData.kuantum_in || 
-            latestInData.jumlah || 
-            latestInData.jumlah_pembayaran || 
-            '-'
-          )
-          
-          textToCopy = `${jenisPengadaan}, ${noPreorder}, ${noIn} = ${kuantumIn}`
+
+          const segments = entries.map((latestInData, idx) => {
+            const noIn = (latestInData.no_in || latestInData.noIn || '-').trim()
+            const kuantumIn = formatKuantum(
+              latestInData.kuantum ||
+              latestInData.kuantum_in ||
+              latestInData.jumlah ||
+              latestInData.jumlah_pembayaran ||
+              '-',
+            )
+            if (idx === 0) {
+              return `IN ${noIn} = ${kuantumIn}`
+            }
+            return `${noIn} = ${kuantumIn}`
+          })
+
+          textToCopy = `${jenisPengadaan};PO ${noPreorder};${segments.join(';')};`
         } else {
-          // Jika tidak ada data IN, tampilkan format alternatif
           const jenisPengadaan = jenisPengadaanFormatted.value
           const noPreorder = item.no_preorder || item.noPreorder || '-'
-          textToCopy = `${jenisPengadaan}, ${noPreorder}, - = Belum ada data IN`
+          textToCopy = `${jenisPengadaan};PO ${noPreorder};Belum ada data IN`
         }
 
-        // Copy ke clipboard
         await navigator.clipboard.writeText(textToCopy)
 
-        // Tampilkan notifikasi sukses
         Swal.fire({
           title: 'Berhasil!',
           text: 'Data berhasil disalin ke clipboard',
