@@ -345,14 +345,13 @@
       try {
         const entries = latestInEntries.value.length > 0 ? latestInEntries.value : parsedInData.value.slice(-1)
 
-        // Format: satu baris per IN terbaru (berdasarkan tanggal terbaru)
         let textToCopy = ''
 
-        if (entries && entries.length > 0) {
-          const jenisPengadaan = jenisPengadaanFormatted.value
-          const noPreorder = item.no_preorder || item.noPreorder || '-'
+        const jenisPengadaan = jenisPengadaanFormatted.value
+        const noPreorder = item.no_preorder || item.noPreorder || '-'
 
-          const segments = entries.map((latestInData, idx) => {
+        if (entries && entries.length > 0) {
+          const segments = entries.map((latestInData) => {
             const noIn = (latestInData.no_in || latestInData.noIn || '-').trim()
             const kuantumIn = formatKuantum(
               latestInData.kuantum ||
@@ -361,17 +360,12 @@
               latestInData.jumlah_pembayaran ||
               '-',
             )
-            if (idx === 0) {
-              return `IN ${noIn} = ${kuantumIn}`
-            }
-            return `${noIn} = ${kuantumIn}`
+            return `IN : ${noIn} = ${kuantumIn}`
           })
 
-          textToCopy = `${jenisPengadaan};PO ${noPreorder};${segments.join(';')};`
+          textToCopy = `${jenisPengadaan} ; PO : ${noPreorder} ; ${segments.join(' ; ')}.`
         } else {
-          const jenisPengadaan = jenisPengadaanFormatted.value
-          const noPreorder = item.no_preorder || item.noPreorder || '-'
-          textToCopy = `${jenisPengadaan};PO ${noPreorder};Belum ada data IN`
+          textToCopy = `${jenisPengadaan} ; PO : ${noPreorder} ; Belum ada data IN.`
         }
 
         await navigator.clipboard.writeText(textToCopy)
