@@ -58,12 +58,9 @@
   })
 
   const tanggalSurat = computed(() => {
-    if (latestInDate.value) {
-      return formatTanggalIndo(latestInDate.value)
-    }
     if (!props.item?.tanggal_pengajuan) return ''
-    const [tahun, bulan, tanggal = '1'] = props.item.tanggal_pengajuan.split('-')
-    return `${parseInt(tanggal)} ${bulanIndo[parseInt(bulan)]} ${tahun}`
+    const [tahun, bulan] = props.item.tanggal_pengajuan.split('-')
+    return `${bulanIndo[parseInt(bulan)]} ${tahun}`
   })
 
   const jenisPengadaanCapital = computed(() => {
