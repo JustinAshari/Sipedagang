@@ -1,5 +1,6 @@
 <script setup>
   import { computed } from 'vue'
+  import parseInData from '@/utils/parseInData'
 
   const props = defineProps({
     item: {
@@ -65,6 +66,46 @@
 
     return unitPart ? `${formattedNumber} ${unitPart}` : formattedNumber
   }
+
+  const dataInEntries = computed(() => {
+    if (props.item?.parsed_in_data && Array.isArray(props.item.parsed_in_data)) {
+      return props.item.parsed_in_data
+    }
+    return parseInData(props.item?.in_data)
+  })
+
+  const parseKuantumValue = (value) => {
+    if (!value) return { jumlah: 0, satuan: '' }
+    const match = value.toString().trim().match(/([\d.,]+)\s*([a-zA-Z]+)?$/)
+    if (!match) return { jumlah: 0, satuan: '' }
+    const jumlah = parseFloat(match[1].replace(/\./g, '').replace(',', '.')) || 0
+    const satuan = match[2] ? match[2].toUpperCase() : ''
+    return { jumlah, satuan }
+  }
+
+  const totalInDisplay = computed(() => {
+    let total = 0
+    let satuan = ''
+    dataInEntries.value.forEach((entry) => {
+      const raw =
+        entry?.kuantum || entry?.kuantum_in || entry?.jumlah || entry?.jumlah_pembayaran
+      const { jumlah, satuan: unit } = parseKuantumValue(raw)
+      total += jumlah
+      if (!satuan && unit) satuan = unit
+    })
+
+    if (!total) return '0'
+    const formatted = new Intl.NumberFormat('id-ID', {
+      minimumFractionDigits: 0,
+      maximumFractionDigits: 3,
+    }).format(total)
+
+    return satuan ? `${formatted} ${satuan.toLowerCase()}` : formatted
+  })
+
+  const jenisPengadaanUpper = computed(() => {
+    return (props.item?.jenis_pengadaan_barang || '').toUpperCase()
+  })
 </script>
 
 <template>
@@ -96,31 +137,24 @@
       <div class="text-justify font-arial text-[13.5px]">
         <!-- 1 -->
         <div class="mt-14">
-          Bersama ini, kami, {{ item.nama_perusahaan }}, menyampaikan permohonan
-          pembayaran
-          <span>
-            {{ jenisPengadaanCapital }}
-          </span>
+          Bersama ini, kami {{ item.nama_perusahaan }}, menyampaikan permohonan
+          pembayaran {{ jenisPengadaanCapital }} 
           <span class="font-bold">
             Pengadaan Dalam Negeri Tahun {{ tahunPengadaan }}</span
           >
-          sebanyak
-          <span class="lowercase">
-            {{ formatKuantum(item.kuantum) }}
-          </span>
-          dengan bukti dokumen terlampir.
+           Sesuai PO No. {{ item.no_preorder }} a.n.
+          {{ item.atasnama_rekening }}, {{ tanggalFormatSurat }} sebesar
+          <span class="lowercase">{{ formatKuantum(item.kuantum) }}</span> dengan
+          pengajuan penagihan pembayaran sebanyak
+          <span class="lowercase">{{ totalInDisplay }}</span> dengan bukti dokumen
+          terlampir.
         </div>
 
         <!-- 2 -->
         <div class="mt-2.5">
-          Mohon kiranya harga
-          <span class="lowercase">
-            {{ item.jenis_pengadaan_barang }}
-          </span>
-          tersebut di atas dapat dibayar/dipindahbukukan ke rekening kami Bank
-          {{ item.jenis_bank }}, sebagaimana No. Rekening
-          {{ item.no_rekening }}, Sesuai PO No. {{ item.no_preorder }} a.n.
-          {{ item.atasnama_rekening }}, {{ tanggalFormatSurat }}.
+          Mohon kiranya harga {{ jenisPengadaanUpper }} tersebut di atas dapat
+          dibayar/dipindahbukukan ke rekening kami Bank {{ item.jenis_bank }},
+          sebagaimana No. Rekening {{ item.no_rekening }}.
         </div>
 
         <!-- 3 -->
